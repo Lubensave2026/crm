@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Todo cerrado por defecto.
+    match /{document=**} { allow read, write: if false; }
+
+    // Casos: cualquier sesión autenticada lee y escribe. No se permite borrar.
+    match /crm_casos/{ot} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
+    // Agenda del día: no se borra.
+    match /crm_agenda/{dia} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
+    // Historial de importaciones: solo se agrega.
+    match /crm_importaciones/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+
+    // Configuración y usuarios: con autenticación anónima las reglas no pueden saber
+    // si quien escribe es "jefe". Esa restricción se aplica en la interfaz (ver README).
+    match /crm_config/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+    match /crm_usuarios/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.rol in ['jefe', 'asesor', 'consulta'];
+      allow delete: if false;
+    }
+  }
+}

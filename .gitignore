@@ -1,0 +1,6 @@
+referencia/*.xlsx
+referencia/*.docx
+node_modules/
+tests/out/
+.firebase/
+*.log

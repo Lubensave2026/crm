@@ -1,0 +1,421 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>CRM Lube N Save v2</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;800&family=Archivo+Narrow:wght@600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: barra negra de marca + pestañas (Hoy · Cartera · Caso · Importar · Semana); cada pestaña es una pantalla del sistema */
+:root{
+  --ink:#141414; --paper:#ffffff; --bg:#f3f3f1; --muted:#6a6a6a; --line:#e0e0dc; --yellow:#FFE500; --yellow-soft:#FFF7B3;
+  --red:#c11800; --red-bg:#fde8e4; --amber:#8a6d00; --amber-bg:#fff4c7; --green:#1f7a3a; --green-bg:#e2f3e7;
+  --display:"Archivo Narrow","Arial Narrow",Arial,sans-serif; --body:"Archivo",system-ui,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ink:#f2f2ee; --paper:#1c1c1c; --bg:#111; --muted:#a0a09a; --line:#333; --yellow:#FFE500; --yellow-soft:#3a3500;
+  --red:#ff7a66; --red-bg:#3a1712; --amber:#f0c84a; --amber-bg:#352c08; --green:#5fd081; --green-bg:#143221; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --ink:#f2f2ee; --paper:#1c1c1c; --bg:#111; --muted:#a0a09a; --line:#333; --yellow:#FFE500; --yellow-soft:#3a3500;
+  --red:#ff7a66; --red-bg:#3a1712; --amber:#f0c84a; --amber-bg:#352c08; --green:#5fd081; --green-bg:#143221; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14.5px;line-height:1.45}
+.top{background:#141414;color:#fff;padding-inline:16px}
+.top .in{max-width:1180px;margin:0 auto;padding-block:14px 0;display:flex;flex-direction:column;gap:10px}
+.brandrow{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+.logo{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:.04em}
+.logo b{background:#FFE500;color:#141414;padding:0 6px;margin-right:6px}
+.who{font-size:12.5px;color:#bdbdbd}
+.who span{color:#141414;background:#FFE500;font-weight:600;padding:2px 8px;border-radius:3px;margin-left:6px}
+nav{display:flex;gap:2px;overflow-x:auto}
+nav button{background:transparent;border:0;color:#a8a8a8;font:600 14px var(--body);padding:10px 16px;cursor:pointer;border-top:3px solid transparent;white-space:nowrap}
+nav button[aria-selected="true"]{background:#FFE500;color:#141414;border-top-color:#FFE500}
+.ban{background:var(--yellow-soft);color:var(--ink);font-size:12.5px;padding:8px 16px;text-align:center}
+main{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:22px 60px}
+section.scr{display:flex;flex-direction:column;gap:18px}
+h1{font-family:var(--display);font-size:clamp(26px,4vw,34px);margin:0;line-height:1.05;text-wrap:balance}
+h2{font-family:var(--display);font-size:20px;margin:0}
+.lead{color:var(--muted);margin:4px 0 0;max-width:70ch}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+.k{background:var(--paper);padding:14px 16px;min-width:0}
+.k .l{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.k .v{font-family:var(--mono);font-size:21px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.k .n{font-size:12px;color:var(--muted)}
+.k.hl{background:var(--yellow);color:#141414}.k.hl .l,.k.hl .n{color:#3a3a3a}
+.card{background:var(--paper);border:1px solid var(--line);display:grid;grid-template-columns:6px 1fr;min-width:0}
+.st.rojo{background:var(--red)}.st.amarillo{background:#e0b400}.st.verde{background:var(--green)}
+.cb{padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:space-between;align-items:baseline}
+.nm{font-weight:600;font-size:16px}.sm{color:var(--muted);font-size:13px}
+.money{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:15px;white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;padding:2px 8px;border-radius:2px;background:var(--bg);border:1px solid var(--line);white-space:nowrap}
+.chip.y{background:var(--yellow);color:#141414;border-color:var(--yellow);font-weight:600}
+.chip.r{background:var(--red-bg);color:var(--red);border-color:transparent}
+.chip.a{background:var(--amber-bg);color:var(--amber);border-color:transparent}
+.chip.g{background:var(--green-bg);color:var(--green);border-color:transparent}
+.msg{background:var(--bg);border-left:3px solid var(--yellow);padding:10px 12px;font-size:13.5px}
+.acts{display:flex;flex-wrap:wrap;gap:6px}
+.btn{border:1px solid var(--ink);background:var(--paper);color:var(--ink);font:600 13px var(--body);padding:6px 12px;cursor:pointer}
+.btn.k1{background:#141414;color:#FFE500;border-color:#141414}
+.btn:focus-visible,nav button:focus-visible{outline:2px solid var(--yellow);outline-offset:2px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px}
+.panel{background:var(--paper);border:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.tw{overflow-x:auto;background:var(--paper);border:1px solid var(--line)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:9px 12px;border-bottom:2px solid var(--ink);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+td.n{font-family:var(--mono);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.tl{display:flex;flex-direction:column;gap:0}
+.tl div{display:grid;grid-template-columns:70px 90px 1fr;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.step{background:var(--paper);border:1px solid var(--line);padding:14px;display:flex;flex-direction:column;gap:6px}
+.step .num{font-family:var(--display);font-size:28px;line-height:1;color:var(--muted)}
+.drop{border:2px dashed var(--ink);background:var(--paper);padding:22px;text-align:center}
+.bar{height:22px;background:var(--bg);position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:#141414}
+.bar i.y{background:var(--yellow)}
+.fun{display:grid;grid-template-columns:150px 1fr 120px;gap:10px;align-items:center;font-size:13px}
+.note{font-size:12.5px;color:var(--muted)}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}.fun{grid-template-columns:110px 1fr 90px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<style>
+[hidden]{display:none!important}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toolbar select,.toolbar input{border:1px solid var(--line);background:var(--paper);color:var(--ink);padding:7px 10px;font:inherit}
+.empty{background:var(--paper);border:1px dashed var(--line);padding:26px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;z-index:20}
+.dlg{background:var(--paper);color:var(--ink);width:100%;max-width:520px;padding:18px;display:flex;flex-direction:column;gap:12px;margin-top:max(24px,env(safe-area-inset-top,0px))}
+.dlg label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.dlg input,.dlg select,.dlg textarea{font:15px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);padding:8px 10px;text-transform:none;letter-spacing:0}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:#141414;color:#FFE500;padding:10px 16px;font-weight:600;z-index:30;max-width:calc(100% - 32px)}
+.drop.over{background:var(--yellow-soft)}
+.cfg{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.cfg label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--muted)}
+.cfg input,.cfg select{font:15px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);padding:7px 9px}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
+.pill{display:inline-block;font-size:12px;padding:2px 8px;border:1px solid var(--line);white-space:nowrap}
+.pill.Recuperado{background:#141414;color:#FFE500;border-color:#141414}
+.pill.En.negociación,.pill.Negociacion{background:var(--yellow);color:#141414;border-color:var(--yellow)}
+.pill.Perdido{color:var(--muted)}
+.pill.EnTaller{background:var(--green-bg);color:var(--green);border-color:transparent}
+.done{opacity:.55}
+.sem3{display:flex;gap:4px}
+.sem3 button{border:1px solid var(--line);background:var(--paper);color:var(--ink);font:600 12px var(--body);padding:4px 8px;cursor:pointer}
+.sem3 button[aria-pressed="true"].rojo{background:var(--red);color:#fff;border-color:var(--red)}
+.sem3 button[aria-pressed="true"].amarillo{background:#e0b400;color:#141414;border-color:#e0b400}
+.sem3 button[aria-pressed="true"].verde{background:var(--green);color:#fff;border-color:var(--green)}
+</style>
+
+<div class="top"><div class="in">
+  <div class="brandrow">
+    <div class="logo"><b>LNS</b>CRM · Recuperación de presupuestos</div>
+    <div class="who"><span id="hoyFecha">Zona 10</span></div>
+  </div>
+  <nav role="tablist" aria-label="Pantallas">
+    <button role="tab" aria-selected="true" data-t="hoy">Hoy</button>
+    <button role="tab" aria-selected="false" data-t="cartera">Cartera</button>
+    <button role="tab" aria-selected="false" data-t="caso">Caso</button>
+    <button role="tab" aria-selected="false" data-t="importar">Importar Clear Mechanic</button>
+    <button role="tab" aria-selected="false" data-t="semana">Semana</button>
+  </nav>
+</div></div>
+<div class="ban" id="ban">PROTOTIPO v2 · los datos se guardan solo en este navegador · en la versión final se guardarán en línea (Firebase) con acceso por PIN</div>
+
+<main>
+<section class="scr" id="hoy"></section>
+<section class="scr" id="cartera" hidden></section>
+<section class="scr" id="caso" hidden></section>
+<section class="scr" id="importar" hidden>
+  <div><h1>Importar desde Clear Mechanic</h1><p class="lead"><b>Carga semanal, cada lunes:</b> descarga en Clear Mechanic el “Reporte de Actividad – Cotizaciones” de los <b>últimos 30 días</b> y súbelo aquí. El sistema crea los casos nuevos, actualiza los existentes y detecta lo que el cliente aprobó después. Nunca duplica, así que no importa que las fechas se traslapen. Cada 3 meses puedes subir el trimestre completo como barrida.</p></div>
+  <label class="drop" id="drop" for="file"><b>Arrastra aquí el Excel de Clear Mechanic o haz clic para buscarlo</b><br><span class="sm">Lunes · rango: últimos 30 días · “Lube N Save Zona 10 - Reporte de Actividad - Cotizaciones - …xlsx”</span></label>
+  <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
+  <div id="impRes"></div>
+  <div class="panel">
+    <h2>Cómo cruza la información</h2>
+    <p class="sm"><b>Clave única:</b> número de OT + punto de inspección. Si la partida ya existe, se actualiza; nunca se duplica.</p>
+    <p class="sm"><b>Rechazado o Pendiente con precio</b> → entra a la cartera con fecha para los seguimientos de 48 h, 7 días y 30 días.</p>
+    <p class="sm"><b>Pasó a Aprobado</b> en una carga posterior → se marca como recuperado automáticamente y suma al monto recuperado.</p>
+    <p class="sm"><b>Partidas sin precio</b> → se reportan como avisos de calidad para corregir en Clear Mechanic.</p>
+  </div>
+</section>
+<section class="scr" id="semana" hidden></section>
+</main>
+
+<div class="ov" id="ov" hidden><div class="dlg" id="dlg"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+/* ================= CONFIG / STORE (capa de datos: en la versión final se reemplaza por Firestore) ================= */
+const KEY='lns_crm_v2';
+const DEF_CFG={min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'};
+let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[]};
+function load(){try{const r=localStorage.getItem(KEY);if(r){const d=JSON.parse(r);S={...S,...d,cfg:{...DEF_CFG,...(d.cfg||{})}}}}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('No se pudo guardar en este navegador')}}
+
+/* ================= UTILIDADES ================= */
+const $=s=>document.querySelector(s);
+const Q=n=>'Q'+Math.round(n||0).toLocaleString('es-GT');
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const TODAY=ymd(new Date());
+const daysBetween=(a,b)=>Math.round((Date.UTC(...b.split('-').map((x,i)=>i==1?x-1:+x))-Date.UTC(...a.split('-').map((x,i)=>i==1?x-1:+x)))/864e5);
+const addDays=(d,n)=>{const [y,m,dd]=d.split('-').map(Number);return ymd(new Date(y,m-1,dd+n))};
+const MES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const fmtD=d=>{if(!d)return '—';const [y,m,dd]=d.split('-');return +dd+' '+MES[m-1]};
+const first=n=>(n||'').split(' ')[0];
+function toast(t){const e=$('#toast');e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2600)}
+const CERRADOS=['Recuperado','Perdido','En taller'];
+const abierto=c=>!CERRADOS.includes(c.estado);
+const STAGES=[{k:'s48',d:2,l:'48 h'},{k:'s7',d:7,l:'7 días'},{k:'s30',d:30,l:'30 días'}];
+const URG={rojo:3,amarillo:2,verde:1};
+const ROJO_KW=/fren|pastill|disco|fuga|direcc|cremaller|bolsa de aire|airbag|llanta|bomba de agua|radiador|faja|banda|tiempo|suspens|amortig|rotula|r[oó]tula|terminal|muleta/i;
+
+function pendientes(c){return Object.values(c.partidas).filter(p=>p.total>0&&!p.recuperada&&p.estadoCM!=='Aprobado')}
+function parcialQ(c,k){return (c.recuperos||[]).filter(r=>r.tipo==='parcial').reduce((a,r)=>a+(r[k]||0),0)}
+function montoCaso(c){return Math.max(0,pendientes(c).reduce((a,p)=>a+p.total,0)-parcialQ(c,'monto'))}
+function moCaso(c){return Math.max(0,pendientes(c).reduce((a,p)=>a+p.mo,0)-parcialQ(c,'mo'))}
+function dias(c){return daysBetween(c.fecha,TODAY)}
+function dueStage(c){if(!abierto(c)||c.estado==='Reprogramado')return null;const d=dias(c);let s=null;for(const st of STAGES)if(d>=st.d&&!c.seg[st.k])s=st;return s}
+function score(c){const d=dias(c);const f=d<=7?1.2:d<=30?1:d<=60?.8:.6;return montoCaso(c)/1000*URG[c.sem||'amarillo']*f}
+
+/* ================= AGENDA DEL DÍA ================= */
+function buildAgenda(force){
+  if(S.agenda[TODAY]&&!force)return S.agenda[TODAY];
+  const open=Object.values(S.casos).filter(c=>abierto(c)&&montoCaso(c)>0);
+  const repro=open.filter(c=>c.estado==='Reprogramado'&&c.proximo&&c.proximo<=TODAY);
+  const due=open.filter(c=>c.estado!=='Reprogramado'&&dueStage(c)).sort((a,b)=>score(b)-score(a));
+  const rest=open.filter(c=>c.estado!=='Reprogramado'&&!dueStage(c)&&(!c.proximo||c.proximo<=TODAY)).sort((a,b)=>score(b)-score(a));
+  const prio=[...repro,...due];
+  const n=Math.min(S.cfg.max,Math.max(S.cfg.min,prio.length));
+  const list=[...prio,...rest].slice(0,n).map(c=>c.ot);
+  S.agenda[TODAY]=list;save();return list;
+}
+
+/* ================= MENSAJES ================= */
+function topItems(c,n=2){return pendientes(c).sort((a,b)=>b.total-a.total).slice(0,n)}
+function mensaje(c){
+  const st=dueStage(c),n=first(c.cliente)||'[Nombre]',it=topItems(c),tit=it.map(p=>{const t=p.punto.toLowerCase().replace(/\s+/g,' ').trim();return t.length>40?t.slice(0,40).replace(/\s\S*$/,'')+'…':t}).join(' y ');
+  const tot=Q(it.reduce((a,p)=>a+p.total,0));
+  if(st&&st.k==='s48')return `Buen día, ${n}. Le saluda ${S.cfg.asesor} de Lube N Save Zona 10. En la inspección de su ${c.vehiculo} encontramos que necesita atención en ${tit}; le comparto las fotos 📷. Le recomendamos atenderlo pronto para evitar un daño mayor. El presupuesto de esas partidas es de ${tot}, con garantía del taller. ¿Le reservo espacio esta semana?`;
+  if(st&&st.k==='s7')return `${n}, le escribo sobre ${tit} de su ${c.vehiculo}. Si le parece, podemos hacer primero lo más urgente (${tot}) y dejar el resto para su próximo servicio. ¿Qué día le queda mejor?`;
+  if(st&&st.k==='s30')return `Hola, ${n}. Solo para recordarle que en la última visita de su ${c.vehiculo} quedó pendiente ${tit}. Cuando guste se lo programamos; recuerde que entregamos todos los vehículos con car wash de cortesía. 🚗`;
+  return `Hola, ${n}. Le saluda ${S.cfg.asesor} de Lube N Save Zona 10. Le escribo por lo que quedó pendiente en su ${c.vehiculo}: ${tit}. Tenemos espacio esta semana y le mantenemos el presupuesto de ${tot}. ¿Le agendo?`;
+}
+function wa(c){const d=(c.movil||'').replace(/\D/g,'');if(d.length<8)return null;return 'https://wa.me/'+(d.length===8?'502'+d:d)+'?text='+encodeURIComponent(mensaje(c))}
+function tfLink(c){const p=new URLSearchParams({nueva:'1',placa:c.placa||'',ot:c.ot,modelo:c.vehiculo||'',cliente:c.cliente||''});if(c.km)p.set('km',c.km);return 'https://lubensave2026.github.io/tallerFLOW/?'+p.toString()}
+
+/* ================= ACCIONES ================= */
+function log(c,canal,resultado,nota){c.bitacora=c.bitacora||[];c.bitacora.push({fecha:TODAY,canal,resultado,nota:nota||''})}
+function markStage(c){const st=dueStage(c);if(st){for(const s of STAGES){c.seg[s.k]=true;if(s===st)break}}}
+function accion(ot,tipo){
+  const c=S.casos[ot];if(!c)return;
+  if(tipo==='enviado'){markStage(c);log(c,'WhatsApp','Mensaje enviado');if(c.estado==='Pendiente'||c.estado==='Rechazado')c.estado='Sin respuesta';c.res=c.res||{};save();render();toast('Contacto registrado');return}
+  if(tipo==='sinresp'){markStage(c);c.estado='Sin respuesta';c.proximo=addDays(TODAY,3);log(c,'WhatsApp','Sin respuesta','Reintento en 3 días');c.resHoy=TODAY+'|Sin respuesta';save();render();toast('Reintento programado en 3 días');return}
+  if(tipo==='negocia'){markStage(c);c.estado='En negociación';log(c,'Llamada','En negociación');c.resHoy=TODAY+'|En negociación';save();render();return}
+  if(tipo==='autorizo')return dlgAutorizo(c);
+  if(tipo==='repro')return dlgRepro(c);
+  if(tipo==='perdido')return dlgPerdido(c);
+  if(tipo==='taller'){c.estado='En taller';log(c,'Sistema','En taller (TallerFLOW)');save();render();toast('Caso marcado en taller');return}
+}
+function openDlg(html,onOk){$('#dlg').innerHTML=html+`<div class="acts" style="justify-content:flex-end"><button class="btn" id="dCancel">Cancelar</button><button class="btn k1" id="dOk">Guardar</button></div>`;$('#ov').hidden=false;$('#dCancel').onclick=closeDlg;$('#dOk').onclick=()=>{if(onOk()!==false)closeDlg()};const f=$('#dlg input,#dlg select');f&&f.focus()}
+function closeDlg(){$('#ov').hidden=true}
+function dlgAutorizo(c){
+  const m=montoCaso(c),mo=moCaso(c);
+  openDlg(`<h2>Autorizó · OT ${esc(c.ot)}</h2><p class="sm">${esc(c.cliente)} · pendiente ${Q(m)} (M.O. ${Q(mo)})</p>
+   <label>Tipo<select id="aT"><option value="total">Total</option><option value="parcial">Parcial</option></select></label>
+   <label>Monto autorizado (Q)<input id="aM" type="number" min="0" value="${Math.round(m)}"></label>
+   <label>Mano de obra autorizada (Q)<input id="aMO" type="number" min="0" value="${Math.round(mo)}"></label>
+   <label>Nota<input id="aN" placeholder="Ej.: autorizó frenos, A/C queda pendiente"></label>`,()=>{
+    const tipo=$('#aT').value,monto=+$('#aM').value||0,moA=+$('#aMO').value||0;
+    if(!monto){toast('Escribe el monto autorizado');return false}
+    markStage(c);c.recuperos=c.recuperos||[];c.recuperos.push({fecha:TODAY,monto,mo:moA,tipo});
+    log(c,'WhatsApp','Autorizado '+tipo,Q(monto)+' · '+$('#aN').value);
+    if(tipo==='total'){c.estado='Recuperado';Object.values(c.partidas).forEach(p=>{if(p.estadoCM!=='Aprobado')p.recuperada=true})}else c.estado='En negociación';
+    c.resHoy=TODAY+'|Autorizado';save();render();toast('Recuperado '+Q(monto)+' · abre la orden en TallerFLOW');});
+}
+function dlgRepro(c){openDlg(`<h2>Reprogramar · OT ${esc(c.ot)}</h2><label>Próximo contacto<input id="rD" type="date" value="${addDays(TODAY,7)}"></label><label>Nota<input id="rN" placeholder="Ej.: cobra en quincena"></label>`,()=>{markStage(c);c.estado='Reprogramado';c.proximo=$('#rD').value;log(c,'WhatsApp','Reprogramado','Para '+fmtD(c.proximo)+' · '+$('#rN').value);c.resHoy=TODAY+'|Reprogramado';save();render();})}
+function dlgPerdido(c){openDlg(`<h2>Perdido · OT ${esc(c.ot)}</h2><label>Motivo (obligatorio)<select id="pM"><option value="">Selecciona…</option><option>Precio</option><option>Lo hizo en otro taller</option><option>Ya no tiene el vehículo</option><option>No le interesa por ahora</option><option>No se pudo contactar (3 intentos)</option><option>Otro</option></select></label><label>Nota<input id="pN"></label>`,()=>{const m=$('#pM').value;if(!m){toast('Selecciona el motivo');return false}c.estado='Perdido';c.motivo=m;log(c,'WhatsApp','Perdido — '+m,$('#pN').value);c.resHoy=TODAY+'|Perdido';save();render();})}
+
+/* ================= IMPORTAR ================= */
+function norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'')}
+const COLS={ot:['or','ot','orden'],fecha:['fechahora','fecha'],nombre:['nombre'],apellido:['apellido'],movil:['movil','telefono','celular'],marca:['marca'],modelo:['modelo'],anio:['ano','anio'],km:['kilometraje','km'],placa:['placas','placa'],tipo:['tipo'],punto:['puntodeinspeccion'],partes:['cotpartes'],mo:['cotizacionmo'],total:['cotizaciontotal'],estado:['aprobadoorechazado']};
+function importar(rows){
+  const head=rows[0].map(norm);const idx={};
+  for(const k in COLS){idx[k]=head.findIndex(h=>COLS[k].includes(h));}
+  const faltan=['ot','punto','total','estado','tipo'].filter(k=>idx[k]<0);
+  if(faltan.length){$('#impRes').innerHTML=`<div class="empty"><b>El archivo no tiene el formato esperado</b>Faltan columnas: ${faltan.join(', ')}. Descarga el “Reporte de Actividad – Cotizaciones” de Clear Mechanic.</div>`;return}
+  const g=(r,k)=>idx[k]>=0?r[idx[k]]:'';
+  let filas=0,nuevos=0,actualiz=0,recup=0,recupQ=0,avisos=0,partidasN=0;const vistos=new Set();const cotiz={};
+  for(const r of rows.slice(1)){
+    if(!r||!g(r,'ot'))continue;filas++;
+    const ot=String(g(r,'ot')).replace(/\.0$/,'').trim(),tipo=String(g(r,'tipo')).trim(),punto=String(g(r,'punto')||'').trim();
+    const est=String(g(r,'estado')||'');const estCM=/aprob/i.test(est)?'Aprobado':/rechaz/i.test(est)?'Rechazado':'Pendiente';
+    let f=g(r,'fecha');f=f instanceof Date?ymd(f):String(f).slice(0,10);
+    if(/^punto/i.test(tipo)){cotiz[ot+'|'+punto]=cotiz[ot+'|'+punto]||{estCM,f,sin:true};continue}
+    if(!/total/i.test(tipo))continue;
+    partidasN++;const k=ot+'|'+punto;cotiz[k]={estCM,f,sin:false};
+    const total=+g(r,'total')||0,mo=+g(r,'mo')||0;
+    let c=S.casos[ot];
+    if(!c){c=S.casos[ot]={ot,cliente:(String(g(r,'nombre')).trim()+' '+String(g(r,'apellido')).trim()).trim(),movil:String(g(r,'movil')||'').trim(),
+      vehiculo:[g(r,'marca'),g(r,'modelo'),g(r,'anio')].filter(Boolean).join(' '),placa:String(g(r,'placa')||''),km:g(r,'km')?String(Math.round(+g(r,'km'))):'',
+      fecha:f,partidas:{},seg:{},bitacora:[],estado:'Pendiente',sem:'amarillo',_nuevo:true};}
+    if(f>c.fecha)c.fecha=f;
+    const prev=c.partidas[punto];
+    if(prev&&prev.estadoCM!=='Aprobado'&&estCM==='Aprobado'&&!prev.recuperada&&!c._nuevo){
+      prev.recuperada=true;recup++;recupQ+=prev.total;c.recuperos=c.recuperos||[];c.recuperos.push({fecha:TODAY,monto:prev.total,mo:prev.mo,tipo:'clear-mechanic'});
+      log(c,'Clear Mechanic','Aprobado detectado en importación',punto+' · '+Q(prev.total));}
+    c.partidas[punto]={punto,total,mo,estadoCM:estCM,fechaCM:f,recuperada:prev?.recuperada||false};
+    vistos.add(ot);
+  }
+  for(const k in cotiz)if(cotiz[k].sin&&cotiz[k].estCM!=='Pendiente')avisos++;
+  for(const ot of vistos){const c=S.casos[ot];
+    if(c._nuevo){delete c._nuevo;if(montoCaso(c)>0){nuevos++;c.sem=Object.values(c.partidas).some(p=>p.estadoCM!=='Aprobado'&&ROJO_KW.test(p.punto))?'rojo':'amarillo';c.estado=pendientes(c).every(p=>p.estadoCM==='Rechazado')?'Rechazado':'Pendiente';log(c,'Clear Mechanic','Caso creado desde importación',Q(montoCaso(c))+' pendiente')}else delete S.casos[ot];}
+    else{actualiz++;if(abierto(c)&&montoCaso(c)===0){c.estado='Recuperado';log(c,'Clear Mechanic','Todas las partidas aprobadas')}}
+  }
+  S.imports.push({fecha:TODAY,filas,nuevos,actualiz,recup,recupQ});delete S.agenda[TODAY];save();
+  const ab=Object.values(S.casos).filter(abierto);
+  $('#impRes').innerHTML=`<div class="steps">
+   <div class="step"><span class="num">${filas.toLocaleString('es-GT')}</span><b>filas leídas</b><span class="sm">${vistos.size} órdenes · ${partidasN} partidas con precio</span></div>
+   <div class="step"><span class="num">${nuevos}</span><b>casos nuevos</b><span class="sm">Órdenes con partidas rechazadas o pendientes</span></div>
+   <div class="step"><span class="num">${recup}</span><b>recuperados detectados</b><span class="sm">${Q(recupQ)} que pasaron a “Aprobado”</span></div>
+   <div class="step"><span class="num">${avisos}</span><b>avisos de calidad</b><span class="sm">Partidas aprobadas o rechazadas sin precio</span></div></div>
+   <div class="panel"><b>Cartera abierta: ${ab.length} casos · ${Q(ab.reduce((a,c)=>a+montoCaso(c),0))}</b><div class="acts"><button class="btn k1" data-go="hoy">Ver la agenda de hoy</button><button class="btn" data-go="cartera">Ver cartera</button></div></div>`;
+  render();
+}
+function leerArchivo(file){
+  if(!window.XLSX){toast('No se pudo cargar el lector de Excel');return}
+  const fr=new FileReader();fr.onload=e=>{try{const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});const ws=wb.Sheets[wb.SheetNames[0]];importar(XLSX.utils.sheet_to_json(ws,{header:1,raw:true}));toast('Importación completa')}catch(err){$('#impRes').innerHTML=`<div class="empty"><b>No se pudo leer el archivo</b>${esc(err.message)}</div>`}};fr.readAsArrayBuffer(file);
+}
+
+/* ================= RENDER ================= */
+let tab='hoy',casoSel=null,fEst='Abiertos',fBus='';
+function chipsCaso(c){const st=dueStage(c),d=dias(c);return `<span class="chip ${c.sem==='rojo'?'r':c.sem==='verde'?'g':'a'}">${{rojo:'CRÍTICO',amarillo:'PREVENTIVO',verde:'VIGILAR'}[c.sem]}</span>${st?`<span class="chip y">Toca: ${st.l}</span>`:c.estado==='Reprogramado'?`<span class="chip y">Reprogramado: ${fmtD(c.proximo)}</span>`:''}<span class="chip">${esc(c.estado)} · ${d} días</span><span class="chip">M.O. ${Q(moCaso(c))}</span>`}
+function cardHoy(c){
+  const r=c.resHoy&&c.resHoy.startsWith(TODAY)?c.resHoy.split('|')[1]:null,w=wa(c);
+  return `<article class="card ${r?'done':''}"><div class="st ${c.sem}"></div><div class="cb">
+   <div class="row"><div><span class="nm">${esc(c.cliente)}</span> <span class="sm">${esc(c.vehiculo)} · ${esc(c.placa)}${c.km?' · '+(+c.km).toLocaleString('es-GT')+' km':''} · OT ${esc(c.ot)}</span></div><span class="money">${Q(montoCaso(c))}</span></div>
+   <div class="chips">${chipsCaso(c)}</div>
+   <div class="sm">${topItems(c,5).map(p=>esc(p.punto)+' '+Q(p.total)).join(' · ')}</div>
+   ${r?`<div class="msg"><b>Registrado hoy:</b> ${esc(r)}</div>`:`<div class="msg">${esc(mensaje(c))}</div>
+   <div class="acts">${w?`<a class="btn k1" href="${w}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-copy="${c.ot}">Copiar</button><button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button><button class="btn" data-ver="${c.ot}">Ver caso</button></div>`}
+  </div></article>`;
+}
+function renderHoy(){
+  const n=Object.keys(S.casos).length,el=$('#hoy');
+  if(!n){el.innerHTML=`<div><h1>Tus casos de hoy</h1></div><div class="empty"><b>Todavía no hay casos</b>Ve a “Importar Clear Mechanic” y sube el reporte de cotizaciones. El sistema arma la agenda solo.</div><div class="acts"><button class="btn k1" data-go="importar">Importar ahora</button></div>`;return}
+  const ag=buildAgenda().map(o=>S.casos[o]).filter(Boolean);
+  const hechos=ag.filter(c=>c.resHoy&&c.resHoy.startsWith(TODAY)).length;
+  const sem=semanaStats();const ult=S.imports.length?S.imports[S.imports.length-1].fecha:null;const atras=ult?daysBetween(ult,TODAY):null;
+  el.innerHTML=`<div class="row"><div><h1>Tus casos de hoy</h1><p class="lead">Entre ${S.cfg.min} y ${S.cfg.max} casos por día: primero los reprogramados y los seguimientos que vencen (48 h · 7 d · 30 d), después los de mayor monto × urgencia. Registra el resultado de cada uno.</p></div><button class="btn" id="reAg">Rehacer agenda</button></div>
+   <div class="kpis"><div class="k hl"><div class="l">En juego hoy</div><div class="v">${Q(ag.reduce((a,c)=>a+montoCaso(c),0))}</div><div class="n">${ag.length} casos asignados</div></div>
+   <div class="k"><div class="l">Registrados</div><div class="v">${hechos} / ${ag.length}</div><div class="n">Meta: todos antes de las 12:00</div></div>
+   <div class="k"><div class="l">Recuperado esta semana</div><div class="v">${Q(sem.monto)}</div><div class="n">${sem.autor} casos autorizados</div></div></div>
+   ${atras!==null&&atras>7?`<div class="msg"><b>Última carga de Clear Mechanic hace ${atras} días.</b> Sube el reporte de los últimos 30 días para no perder los seguimientos de 48 h y 7 días. <button class="btn" data-go="importar">Importar</button></div>`:''}
+   ${ag.length?ag.map(cardHoy).join(''):`<div class="empty"><b>Sin casos para hoy</b>No hay seguimientos pendientes en la cartera.</div>`}`;
+}
+function renderCartera(){
+  const all=Object.values(S.casos),ab=all.filter(abierto);
+  const est=['Abiertos','Pendiente','Rechazado','Sin respuesta','En negociación','Reprogramado','Recuperado','Perdido','En taller','Todos'];
+  let l=all.filter(c=>fEst==='Todos'||(fEst==='Abiertos'?abierto(c):c.estado===fEst));
+  if(fBus){const q=fBus.toLowerCase();l=l.filter(c=>[c.ot,c.cliente,c.placa,c.vehiculo].join(' ').toLowerCase().includes(q))}
+  l.sort((a,b)=>montoCaso(b)-montoCaso(a)||(b.fecha||'').localeCompare(a.fecha||''));
+  const rec=all.reduce((a,c)=>a+(c.recuperos||[]).reduce((x,r)=>x+r.monto,0),0);
+  $('#cartera').innerHTML=`<div><h1>Cartera de presupuestos</h1><p class="lead">Todo lo que el cliente no autorizó en Clear Mechanic entra aquí. Nada se cierra sin motivo registrado.</p></div>
+   <div class="kpis"><div class="k hl"><div class="l">Monto dormido</div><div class="v">${Q(ab.reduce((a,c)=>a+montoCaso(c),0))}</div><div class="n">${ab.length} casos abiertos</div></div>
+   <div class="k"><div class="l">≥ Q5,000</div><div class="v">${ab.filter(c=>montoCaso(c)>=5000).length}</div><div class="n">${Q(ab.filter(c=>montoCaso(c)>=5000).reduce((a,c)=>a+montoCaso(c),0))}</div></div>
+   <div class="k"><div class="l">Recuperado total</div><div class="v">${Q(rec)}</div><div class="n">${all.filter(c=>c.estado==='Recuperado').length} casos cerrados</div></div>
+   <div class="k"><div class="l">Perdidos</div><div class="v">${all.filter(c=>c.estado==='Perdido').length}</div><div class="n">con motivo registrado</div></div></div>
+   <div class="toolbar"><select id="fEst" aria-label="Estado">${est.map(e=>`<option ${e===fEst?'selected':''}>${e}</option>`).join('')}</select><input id="fBus" type="search" placeholder="Buscar OT, cliente, placa…" value="${esc(fBus)}" aria-label="Buscar"></div>
+   ${l.length?`<div class="tw"><table><thead><tr><th>OT</th><th>Cliente</th><th>Vehículo · Placa</th><th>Principal pendiente</th><th>Estado</th><th style="text-align:right">Días</th><th style="text-align:right">Monto</th></tr></thead><tbody>
+   ${l.map(c=>`<tr class="click" data-ver="${c.ot}"><td>${esc(c.ot)}</td><td>${esc(c.cliente)}</td><td>${esc(c.vehiculo)} · ${esc(c.placa)}</td><td>${esc(topItems(c,1)[0]?.punto||'—')}</td><td><span class="pill ${c.estado.replace(/\s/g,'')}">${esc(c.estado)}</span></td><td class="n">${dias(c)}</td><td class="n">${Q(montoCaso(c))}</td></tr>`).join('')}</tbody></table></div>`:`<div class="empty"><b>Sin casos con ese filtro</b>${all.length?'Cambia el estado o la búsqueda.':'Importa el reporte de Clear Mechanic para llenar la cartera.'}</div>`}`;
+}
+function renderCaso(){
+  const c=S.casos[casoSel];const el=$('#caso');
+  if(!c){el.innerHTML=`<div class="empty"><b>Selecciona un caso</b>Ábrelo desde la agenda de hoy o desde la cartera.</div>`;return}
+  const parts=Object.values(c.partidas).sort((a,b)=>b.total-a.total);
+  el.innerHTML=`<div class="row"><div><h1>OT ${esc(c.ot)} · ${esc(c.cliente)}</h1><p class="lead">${esc(c.vehiculo)} · ${esc(c.placa)}${c.km?' · '+(+c.km).toLocaleString('es-GT')+' km':''} · cotizado ${fmtD(c.fecha)} · Tel. ${esc(c.movil||'—')}</p></div><button class="btn" data-go="cartera">← Cartera</button></div>
+  <div class="chips">${chipsCaso(c)}</div>
+  <div class="grid2"><div class="panel"><h2>Partidas</h2>
+   <div class="tw" style="border:0"><table><thead><tr><th>Punto de inspección</th><th>Clear Mechanic</th><th style="text-align:right">M.O.</th><th style="text-align:right">Total</th></tr></thead><tbody>
+   ${parts.map(p=>`<tr class="${p.estadoCM==='Aprobado'||p.recuperada?'done':''}"><td>${esc(p.punto)}</td><td>${p.recuperada?'Recuperada':esc(p.estadoCM)}</td><td class="n">${Q(p.mo)}</td><td class="n">${Q(p.total)}</td></tr>`).join('')}
+   <tr><td><b>Pendiente por recuperar</b></td><td></td><td class="n"><b>${Q(moCaso(c))}</b></td><td class="n"><b>${Q(montoCaso(c))}</b></td></tr></tbody></table></div>
+   <h2>Bitácora de contactos</h2><div class="tl">${(c.bitacora||[]).slice().reverse().map(b=>`<div><b>${fmtD(b.fecha)}</b><span>${esc(b.canal)}</span><span>${esc(b.resultado)}${b.nota?' · '+esc(b.nota):''}</span></div>`).join('')||'<p class="sm">Sin contactos registrados.</p>'}</div></div>
+  <div class="panel"><h2>Urgencia</h2><div class="sem3" id="sem3">${['rojo','amarillo','verde'].map(s=>`<button class="${s}" aria-pressed="${c.sem===s}" data-sem="${s}">${{rojo:'Crítico',amarillo:'Preventivo',verde:'Vigilar'}[s]}</button>`).join('')}</div>
+   <h2>Seguimientos</h2><div class="chips">${STAGES.map(s=>`<span class="chip ${c.seg[s.k]?'g':dias(c)>=s.d&&abierto(c)?'r':''}">${s.l}${c.seg[s.k]?' ✓':''}</span>`).join('')}</div>
+   <h2>Mensaje sugerido</h2><div class="msg">${esc(mensaje(c))}</div>
+   ${abierto(c)?`<div class="acts">${wa(c)?`<a class="btn k1" href="${wa(c)}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="negocia" data-ot="${c.ot}">En negociación</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button></div>`:`<p class="sm">Caso cerrado: <b>${esc(c.estado)}</b>${c.motivo?' · '+esc(c.motivo):''}</p>`}
+   <h2>Enlaces</h2><div class="acts"><a class="btn" href="${tfLink(c)}" target="_blank" rel="noopener">Abrir orden en TallerFLOW</a><a class="btn" href="https://lubensavezona10.clearmechanic.com/dashboard/orders" target="_blank" rel="noopener">Clear Mechanic</a>${abierto(c)?`<button class="btn" data-a="taller" data-ot="${c.ot}">Marcar en taller</button>`:''}</div>
+   <p class="note">“Abrir orden en TallerFLOW” crea la orden con placa, OT, modelo, cliente y km ya llenos (mismo enlace que usa la skill de Clear Mechanic).</p></div></div>`;
+}
+function weekStart(d){const [y,m,dd]=d.split('-').map(Number);const dt=new Date(y,m-1,dd);const w=(dt.getDay()+6)%7;dt.setDate(dt.getDate()-w);return ymd(dt)}
+function semanaStats(){
+  const ws=weekStart(TODAY);let monto=0,mo=0,autor=0,contact=0,asign=0;const porDia={};
+  for(let i=0;i<6;i++){const d=addDays(ws,i);porDia[d]={asig:(S.agenda[d]||[]).length,cont:0,aut:0,monto:0}}
+  for(const c of Object.values(S.casos)){(c.bitacora||[]).forEach(b=>{if(porDia[b.fecha]&&b.canal!=='Clear Mechanic'&&b.canal!=='Sistema')porDia[b.fecha].cont++});(c.recuperos||[]).forEach(r=>{if(porDia[r.fecha]){porDia[r.fecha].aut++;porDia[r.fecha].monto+=r.monto;monto+=r.monto;mo+=r.mo;autor++}})}
+  return {ws,porDia,monto,mo,autor};
+}
+function mesStats(){const m=TODAY.slice(0,7);let monto=0,mo=0;for(const c of Object.values(S.casos))(c.recuperos||[]).forEach(r=>{if(r.fecha.startsWith(m)){monto+=r.monto;mo+=r.mo}});return {monto,mo}}
+function incentivo(base){const {meta,pct1,pct2}=S.cfg;const t1=Math.min(base,meta)*pct1/100,t2=Math.max(0,base-meta)*pct2/100;return t1+t2}
+function renderSemana(){
+  const s=semanaStats(),m=mesStats(),base=S.cfg.base==='mo'?m.mo:m.monto,inc=incentivo(base);
+  const D=['Lun','Mar','Mié','Jue','Vie','Sáb'];const rows=Object.entries(s.porDia);
+  const tot=rows.reduce((a,[,v])=>({asig:a.asig+v.asig,cont:a.cont+v.cont,aut:a.aut+v.aut,monto:a.monto+v.monto}),{asig:0,cont:0,aut:0,monto:0});
+  const all=Object.values(S.casos),cot=all.reduce((a,c)=>a+Object.values(c.partidas).filter(p=>p.estadoCM!=='Aprobado'||p.recuperada).reduce((x,p)=>x+p.total,0),0);
+  const rec=all.reduce((a,c)=>a+(c.recuperos||[]).reduce((x,r)=>x+r.monto,0),0),dorm=all.filter(abierto).reduce((a,c)=>a+montoCaso(c),0);
+  const pct=x=>cot?Math.round(x/cot*100):0;
+  $('#semana').innerHTML=`<div><h1>Reporte del sábado</h1><p class="lead">Semana del ${fmtD(s.ws)} al ${fmtD(addDays(s.ws,5))}. Se llena solo con lo que se registra en “Hoy”.</p></div>
+  <div class="kpis"><div class="k"><div class="l">Casos asignados</div><div class="v">${tot.asig}</div><div class="n">${S.cfg.min}–${S.cfg.max} por día</div></div>
+   <div class="k"><div class="l">Contactos</div><div class="v">${tot.cont}</div><div class="n">registrados en bitácora</div></div>
+   <div class="k"><div class="l">Autorizados</div><div class="v">${tot.aut}</div><div class="n">${tot.cont?Math.round(tot.aut/tot.cont*100):0}% de retorno</div></div>
+   <div class="k hl"><div class="l">Recuperado semana</div><div class="v">${Q(tot.monto)}</div><div class="n">suma a la facturación</div></div></div>
+  <div class="tw"><table><thead><tr><th>Día</th><th style="text-align:right">Asignados</th><th style="text-align:right">Contactos</th><th style="text-align:right">Autorizados</th><th style="text-align:right">Recuperado</th></tr></thead><tbody>
+   ${rows.map(([d,v],i)=>`<tr${d===TODAY?' style="background:var(--yellow-soft)"':''}><td>${D[i]} ${fmtD(d)}</td><td class="n">${v.asig}</td><td class="n">${v.cont}</td><td class="n">${v.aut}</td><td class="n">${v.monto?Q(v.monto):'—'}</td></tr>`).join('')}
+   <tr><td><b>Total</b></td><td class="n"><b>${tot.asig}</b></td><td class="n"><b>${tot.cont}</b></td><td class="n"><b>${tot.aut}</b></td><td class="n"><b>${Q(tot.monto)}</b></td></tr></tbody></table></div>
+  <div class="grid2"><div class="panel"><h2>Embudo de la cartera</h2>
+   <div class="fun"><span>No aprobado en CM</span><div class="bar"><i style="width:100%"></i></div><span class="money">${Q(cot)}</span></div>
+   <div class="fun"><span>Recuperado</span><div class="bar"><i class="y" style="width:${pct(rec)}%"></i></div><span class="money">${Q(rec)}</span></div>
+   <div class="fun"><span>Sigue dormido</span><div class="bar"><i style="width:${pct(dorm)}%"></i></div><span class="money">${Q(dorm)}</span></div></div>
+  <div class="panel"><h2>Incentivo de ${esc(S.cfg.asesor)} · mes en curso</h2>
+   <p class="sm">Base: ${S.cfg.base==='mo'?'mano de obra recuperada':'monto recuperado'} del mes · ${S.cfg.pct1}% hasta la meta de ${Q(S.cfg.meta)} y ${S.cfg.pct2}% sobre el excedente.</p>
+   <div class="kpis"><div class="k"><div class="l">Base del mes</div><div class="v">${Q(base)}</div><div class="bar" style="height:6px;margin-top:6px"><i class="y" style="width:${Math.min(100,base/S.cfg.meta*100)}%"></i></div><div class="n">${Math.round(base/S.cfg.meta*100)}% de la meta</div></div><div class="k hl"><div class="l">Incentivo</div><div class="v">${Q(inc)}</div><div class="n">propuesta, sujeta a aprobación</div></div></div></div></div>
+  <div class="panel"><h2>Ajustes</h2><div class="cfg">
+   <label>Asesor<input id="c_asesor" value="${esc(S.cfg.asesor)}"></label>
+   <label>Casos mínimos por día<input id="c_min" type="number" min="1" value="${S.cfg.min}"></label>
+   <label>Casos máximos por día<input id="c_max" type="number" min="1" value="${S.cfg.max}"></label>
+   <label>Meta mensual recuperada (Q)<input id="c_meta" type="number" min="0" value="${S.cfg.meta}"></label>
+   <label>% hasta la meta<input id="c_pct1" type="number" min="0" step="0.5" value="${S.cfg.pct1}"></label>
+   <label>% sobre la meta<input id="c_pct2" type="number" min="0" step="0.5" value="${S.cfg.pct2}"></label>
+   <label>Base del incentivo<select id="c_base"><option value="total" ${S.cfg.base==='total'?'selected':''}>Monto total recuperado</option><option value="mo" ${S.cfg.base==='mo'?'selected':''}>Mano de obra recuperada</option></select></label></div>
+   <div class="acts"><button class="btn k1" id="cSave">Guardar ajustes</button><button class="btn" id="cReset">Borrar todos los datos</button></div></div>`;
+}
+function render(){({hoy:renderHoy,cartera:renderCartera,caso:renderCaso,semana:renderSemana,importar:()=>{}})[tab]()}
+function go(t){tab=t;document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.t===t)));document.querySelectorAll('section.scr').forEach(s=>s.hidden=s.id!==t);render();window.scrollTo(0,0)}
+
+/* ================= EVENTOS ================= */
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#cReset');if(!t)return;
+  if(t.dataset.go)return go(t.dataset.go);
+  if(t.dataset.ver){casoSel=t.dataset.ver;return go('caso')}
+  if(t.dataset.a){if(t.tagName!=='A')e.preventDefault();return accion(t.dataset.ot,t.dataset.a)}
+  if(t.dataset.copy){const c=S.casos[t.dataset.copy];try{await navigator.clipboard.writeText(mensaje(c));toast('Mensaje copiado')}catch(_){toast('No se pudo copiar: selecciona el texto')}return}
+  if(t.dataset.sem){S.casos[casoSel].sem=t.dataset.sem;save();return render()}
+  if(t.id==='reAg'){buildAgenda(true);return render()}
+  if(t.id==='cSave'){const v=id=>$('#'+id).value;S.cfg={asesor:v('c_asesor')||'Ricardo',min:Math.max(1,+v('c_min')||2),max:Math.max(1,+v('c_max')||5),meta:+v('c_meta')||0,pct1:+v('c_pct1')||0,pct2:+v('c_pct2')||0,base:v('c_base')};if(S.cfg.min>S.cfg.max)S.cfg.min=S.cfg.max;delete S.agenda[TODAY];save();render();return toast('Ajustes guardados')}
+  if(t.id==='cReset'){if(t.dataset.ok){S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[]};save();toast('Datos borrados');return go('importar')}t.dataset.ok=1;t.textContent='Confirmar: borrar todo';return}
+});
+document.addEventListener('change',e=>{if(e.target.id==='fEst'){fEst=e.target.value;renderCartera()}});
+document.addEventListener('input',e=>{if(e.target.id==='fBus'){fBus=e.target.value;const p=e.target.selectionStart;renderCartera();const i=$('#fBus');i.focus();i.setSelectionRange(p,p)}});
+$('#ov').addEventListener('click',e=>{if(e.target.id==='ov')closeDlg()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDlg()});
+$('#file').addEventListener('change',e=>{const f=e.target.files[0];if(f)leerArchivo(f);e.target.value=''});
+const dr=$('#drop');['dragenter','dragover'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.add('over')}));['dragleave','drop'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.remove('over')}));
+dr.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)leerArchivo(f)});
+
+load();
+$('#hoyFecha').textContent='Zona 10 · '+new Date().toLocaleDateString('es-GT',{weekday:'long',day:'numeric',month:'long'});
+go(Object.keys(S.casos).length?'hoy':'importar');
+</script>
+
+</body></html>

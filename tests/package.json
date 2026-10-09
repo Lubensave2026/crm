@@ -1,0 +1,2 @@
+{ "name": "crm-lns-tests", "private": true, "type": "module",
+  "dependencies": { "firebase": "10.12.2", "playwright": "1.49.1", "xlsx": "0.18.5" } }
