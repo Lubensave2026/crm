@@ -174,7 +174,7 @@ const app=initializeApp(FB_CFG),auth=getAuth(app),db=initializeFirestore(app,{ig
 
 const DEF_CFG={min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'};
 let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[]};
-let USER=null;const ready={casos:false,agenda:false,cfg:false};
+let USER=null,US=[];const ready={casos:false,agenda:false,cfg:false};
 const gtToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:'America/Guatemala'});
 let TODAY=gtToday();
 const iso=()=>new Date().toISOString();
@@ -348,7 +348,6 @@ function mensaje(c){
   return `Hola, ${n}. Le saluda ${S.cfg.asesor} de Lube N Save Zona 10. Le escribo por lo que quedó pendiente en su ${c.vehiculo}: ${tit}. Tenemos espacio esta semana y le mantenemos el presupuesto de ${tot}. ¿Le agendo?`;
 }
 function wa(c){const d=(c.movil||'').replace(/\D/g,'');if(d.length<8)return null;return 'https://wa.me/'+(d.length===8?'502'+d:d)+'?text='+encodeURIComponent(mensaje(c))}
-function tfLink(c){const p=new URLSearchParams({nueva:'1',placa:c.placa||'',ot:c.ot,modelo:c.vehiculo||'',cliente:c.cliente||''});if(c.km)p.set('km',c.km);return 'https://lubensave2026.github.io/tallerFLOW/?'+p.toString()}
 
 /* ================= ACCIONES (escrituras por documento) ================= */
 const ref=ot=>doc(db,'crm_casos',ot);
@@ -367,7 +366,7 @@ function accion(ot,tipo){
   if(tipo==='autorizo')return dlgAutorizo(c);
   if(tipo==='repro')return dlgRepro(c);
   if(tipo==='perdido')return dlgPerdido(c);
-  if(tipo==='taller'){wr(ot,['estado','En taller','bitacora',arrayUnion(ent('Sistema','En taller (TallerFLOW)'))]).then(k=>k&&toast('Caso marcado en taller'));return}
+  if(tipo==='taller'){wr(ot,['estado','En taller','bitacora',arrayUnion(ent('Sistema','En taller'))]).then(k=>k&&toast('Caso marcado en taller'));return}
 }
 function openDlg(html,onOk){$('#dlg').innerHTML=html+`<div class="acts" style="justify-content:flex-end"><button class="btn" id="dCancel">Cancelar</button><button class="btn k1" id="dOk">Guardar</button></div>`;$('#ov').hidden=false;$('#dCancel').onclick=closeDlg;$('#dOk').onclick=()=>{if(onOk()!==false)closeDlg()};const f=$('#dlg input,#dlg select');f&&f.focus()}
 function closeDlg(){$('#ov').hidden=true}
@@ -384,7 +383,7 @@ function dlgAutorizo(c){
     if(tipo==='total'&&monto<Math.round(m)){tipo='parcial';toast('El monto es menor al pendiente: se registró como Parcial y el resto sigue en la cartera')}
     const p=[...stagePairs(c),'recuperos',arrayUnion({fecha:TODAY,monto,mo:moA,tipo,usuario:USER.nombre}),'bitacora',arrayUnion(ent('WhatsApp','Autorizado '+tipo,Q(monto)+' · '+nota)),'resHoy',TODAY+'|Autorizado'];
     if(tipo==='total'){p.push('estado','Recuperado');for(const [k,x] of Object.entries(c.partidas))if(x.estadoCM!=='Aprobado')p.push(new FieldPath('partidas',k,'recuperada'),true)}else p.push('estado','En negociación');
-    wr(c.ot,p).then(k=>k&&toast((tipo==='total'?'Recuperado ':'Autorizado parcial ')+Q(monto)+' · abre la orden en TallerFLOW'));});
+    wr(c.ot,p).then(k=>k&&toast((tipo==='total'?'Recuperado ':'Autorizado parcial ')+Q(monto)+''));});
   /* El tipo sigue al monto: menos que el pendiente = Parcial; todo el pendiente = Total */
   const aT=$('#aT'),aM=$('#aM'),aMO=$('#aMO'),hint=$('#aHint'),pend=Math.round(m);
   const sync=()=>{const v=+aM.value||0;if(v>0&&v<pend){aT.value='parcial';hint.textContent='Monto menor al pendiente: se registra como Parcial y el resto ('+Q(pend-v)+') sigue en la cartera.'}else if(v>=pend){aT.value='total';hint.textContent='Cubre todo lo pendiente: el caso se cierra como Recuperado.'}};
@@ -461,6 +460,43 @@ async function descargarRespaldo(){
   catch(e){toast('Se descargó, pero no se pudo anotar la fecha: '+(e.code||e.message))}
 }
 
+/* ================= PIN Y USUARIOS ================= */
+const pinOk=p=>/^\d{6}$/.test(p);
+const nuevoPin=async(id,pin)=>{const sal=[...crypto.getRandomValues(new Uint8Array(16))].map(x=>x.toString(16).padStart(2,'0')).join('');return {sal,pinHash:await hashPin(sal,id,pin)}};
+async function recargarUsuarios(){try{US=(await getDocs(collection(db,'crm_usuarios'))).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.nombre.localeCompare(b.nombre))}catch(e){}scheduleRender()}
+const pinInput=(id,l)=>`<label>${l}<input id="${id}" type="password" inputmode="numeric" maxlength="6" autocomplete="off"></label>`;
+function dlgCambiarPin(u){
+  const propio=u.id===USER.id;
+  openDlg(`<h2>${propio?'Cambiar mi PIN':'Restablecer PIN · '+esc(u.nombre)}</h2>${propio?pinInput('pA','PIN actual'):''}${pinInput('pN1','PIN nuevo (6 dígitos)')}${pinInput('pN2','Repite el PIN nuevo')}`,()=>{
+    const a=propio?$('#pA').value.trim():'',n1=$('#pN1').value.trim(),n2=$('#pN2').value.trim();
+    (async()=>{
+      if(!pinOk(n1)){toast('El PIN nuevo debe tener exactamente 6 dígitos');return}
+      if(n1!==n2){toast('Los dos PIN nuevos no coinciden');return}
+      if(propio&&await hashPin(u.sal,u.id,a)!==u.pinHash){toast('El PIN actual no es correcto');return}
+      if(propio&&a===n1){toast('El PIN nuevo debe ser distinto del actual');return}
+      try{const h=await nuevoPin(u.id,n1);await updateDoc(doc(db,'crm_usuarios',u.id),h);Object.assign(u,h);if(propio)Object.assign(USER,h);closeDlg();toast(propio?'PIN cambiado':'PIN de '+u.nombre+' restablecido');recargarUsuarios()}
+      catch(e){toast('No se pudo guardar: '+(e.code||e.message))}
+    })();return false});
+  const f=$('#pA')||$('#pN1');f&&f.focus();
+}
+function dlgNuevoUsuario(){
+  openDlg(`<h2>Agregar usuario</h2><label>Nombre<input id="uN" maxlength="30" autocomplete="off"></label>
+   <label>Rol<select id="uR"><option value="consulta">Consulta (solo ve)</option><option value="asesor">Asesor (registra, importa)</option><option value="jefe">Jefe (todo, incluido Ajustes)</option></select></label>${pinInput('uP','PIN inicial (6 dígitos)')}`,()=>{
+    const nombre=$('#uN').value.trim(),rol=$('#uR').value,pin=$('#uP').value.trim();
+    const id=nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+    (async()=>{
+      if(!nombre||!id){toast('Escribe el nombre');return}
+      if(!pinOk(pin)){toast('El PIN debe tener exactamente 6 dígitos');return}
+      if(US.some(x=>x.id===id)){toast('Ya existe un usuario con ese nombre');return}
+      try{const h=await nuevoPin(id,pin);await setDoc(doc(db,'crm_usuarios',id),{nombre,rol,activo:true,...h});closeDlg();toast('Usuario '+nombre+' creado');recargarUsuarios()}
+      catch(e){toast('No se pudo guardar: '+(e.code||e.message))}
+    })();return false});
+}
+async function alternarAcceso(id){
+  const u=US.find(x=>x.id===id);if(!u||u.id===USER.id)return;
+  try{await updateDoc(doc(db,'crm_usuarios',id),{activo:u.activo===false});toast(u.activo===false?u.nombre+' puede entrar otra vez':'Acceso de '+u.nombre+' desactivado');recargarUsuarios()}catch(e){toast('No se pudo guardar: '+(e.code||e.message))}
+}
+
 /* ================= RENDER ================= */
 let tab='hoy',casoSel=null,fEst='Abiertos',fBus='';
 const loadingHtml=`<div class="empty"><b>Cargando datos…</b>Conectando con Firebase.</div>`;
@@ -525,8 +561,8 @@ function renderCaso(){
    <h2>Seguimientos</h2><div class="chips">${STAGES.map(s=>`<span class="chip ${c.seg[s.k]?'g':dias(c)>=s.d&&abierto(c)?'r':''}">${s.l}${c.seg[s.k]?' ✓':''}</span>`).join('')}</div>
    <h2>Mensaje sugerido</h2><div class="msg">${esc(mensaje(c))}</div>
    ${abierto(c)?(A?`<div class="acts">${wa(c)?`<a class="btn k1" href="${wa(c)}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="negocia" data-ot="${c.ot}">En negociación</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button></div>`:''):`<p class="sm">Caso cerrado: <b>${esc(c.estado)}</b>${c.motivo?' · '+esc(c.motivo):''}</p>`}
-   <h2>Enlaces</h2><div class="acts"><a class="btn" href="${tfLink(c)}" target="_blank" rel="noopener">Abrir orden en TallerFLOW</a><a class="btn" href="https://lubensavezona10.clearmechanic.com/dashboard/orders" target="_blank" rel="noopener">Clear Mechanic</a>${abierto(c)&&A?`<button class="btn" data-a="taller" data-ot="${c.ot}">Marcar en taller</button>`:''}</div>
-   <p class="note">“Abrir orden en TallerFLOW” crea la orden con placa, OT, modelo, cliente y km ya llenos (mismo enlace que usa la skill de Clear Mechanic).</p></div></div>`;
+   <h2>Enlaces</h2><div class="acts"><a class="btn" href="https://lubensavezona10.clearmechanic.com/dashboard/orders" target="_blank" rel="noopener">Clear Mechanic</a>${abierto(c)&&A?`<button class="btn" data-a="taller" data-ot="${c.ot}">Marcar en taller</button>`:''}</div>
+  </div></div>`;
 }
 function weekStart(d){const [y,m,dd]=d.split('-').map(Number);const dt=new Date(y,m-1,dd);const w=(dt.getDay()+6)%7;dt.setDate(dt.getDate()-w);return ymd(dt)}
 function semanaStats(){
@@ -571,7 +607,12 @@ function renderSemana(){
    <label>% hasta la meta<input id="c_pct1" type="number" min="0" step="0.5" value="${S.cfg.pct1}"></label>
    <label>% sobre la meta<input id="c_pct2" type="number" min="0" step="0.5" value="${S.cfg.pct2}"></label>
    <label>Base del incentivo<select id="c_base"><option value="total" ${S.cfg.base==='total'?'selected':''}>Monto total recuperado</option><option value="mo" ${S.cfg.base==='mo'?'selected':''}>Mano de obra recuperada</option></select></label></div>
-   <div class="acts"><button class="btn k1" id="cSave">Guardar ajustes</button></div></div>`:''}`;
+   <div class="acts"><button class="btn k1" id="cSave">Guardar ajustes</button></div>
+   <h2 style="margin-top:8px">Usuarios y accesos</h2>
+   <div class="tw"><table><thead><tr><th>Usuario</th><th>Rol</th><th>Acceso</th><th></th></tr></thead><tbody>
+   ${US.map(u=>`<tr><td>${esc(u.nombre)}</td><td>${esc(u.rol)}</td><td>${u.activo===false?'<span class="pill">Desactivado</span>':'Activo'}</td><td style="text-align:right;white-space:nowrap"><button class="btn" data-upin="${esc(u.id)}">${u.id===USER.id?'Cambiar mi PIN':'Restablecer PIN'}</button>${u.id===USER.id?'':` <button class="btn" data-uact="${esc(u.id)}">${u.activo===false?'Activar':'Desactivar'}</button>`}</td></tr>`).join('')}</tbody></table></div>
+   <div class="acts"><button class="btn" id="uAdd">Agregar usuario</button></div>
+  </div>`:''}`;
 }
 function renderImportar(){
   const u=S.imports[0];const box=$('#impUlt');if(!box)return;
@@ -585,13 +626,17 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';tab=t;pref('tab',t==='caso'?
 /* ================= EVENTOS ================= */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp');if(!t)return;
+  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact]');if(!t)return;
   if(t.id==='salir'){sess('user',null);location.reload();return}
   if(t.dataset.go)return go(t.dataset.go);
   if(t.dataset.ver){casoSel=t.dataset.ver;return go('caso')}
   if(t.dataset.a){if(t.tagName!=='A')e.preventDefault();return accion(t.dataset.ot,t.dataset.a)}
   if(t.dataset.copy){const c=S.casos[t.dataset.copy];try{await navigator.clipboard.writeText(mensaje(c));toast('Mensaje copiado')}catch(_){toast('No se pudo copiar: selecciona el texto')}return}
   if(t.dataset.sem){if(!canAct())return;wr(casoSel,['sem',t.dataset.sem]);return}
+  if(t.id==='cpin')return dlgCambiarPin(USER);
+  if(t.id==='uAdd'){if(isJefe())dlgNuevoUsuario();return}
+  if(t.dataset.upin){const u=US.find(x=>x.id===t.dataset.upin);if(u&&(isJefe()||u.id===USER.id))dlgCambiarPin(u);return}
+  if(t.dataset.uact){if(isJefe())alternarAcceso(t.dataset.uact);return}
   if(t.id==='bkp')return descargarRespaldo();
   if(t.id==='reAg'){if(canAct())await rehacerAgenda();return}
   if(t.id==='cSave'){if(!isJefe())return;const v=id=>$('#'+id).value;
@@ -616,7 +661,7 @@ function entrar(u){
   USER=u;sess('user',u.id);
   $('#login').hidden=true;
   $('#hoyFecha').textContent='Zona 10 · '+new Date().toLocaleDateString('es-GT',{weekday:'long',day:'numeric',month:'long',timeZone:'America/Guatemala'});
-  $('#quien').innerHTML=`${esc(u.nombre)} <span>${esc(u.rol)}</span> <button id="salir">Salir</button>`;
+  $('#quien').innerHTML=`${esc(u.nombre)} <span>${esc(u.rol)}</span> <button id="cpin">Cambiar PIN</button> <button id="salir">Salir</button>`;
   document.querySelector('nav button[data-t="importar"]').hidden=!canAct();
   const b=$('#ban');b.className='ban';b.textContent=BAN_OK;
   startSync();
@@ -628,17 +673,17 @@ async function loginUI(){
     if(!auth.currentUser)await signInAnonymously(auth);
     const snap=await getDocs(collection(db,'crm_usuarios'));
     const us=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>a.nombre.localeCompare(b.nombre));
-    const sid=sess('user');const prev=sid&&us.find(x=>x.id===sid);
+    US=us;const sid=sess('user');const prev=sid&&us.find(x=>x.id===sid&&x.activo!==false);
     if(prev)return entrar(prev);
-    if(!us.length){body.innerHTML=`<p><b>Faltan los usuarios.</b></p><p class="sm">El jefe debe ejecutar <code>node tests/seed-usuarios.mjs</code> una vez (ver README).</p>`;return}
-    let sel=pref('lastUser');if(!us.find(x=>x.id===sel))sel=us[0].id;let fails=0,lock=0;
-    body.innerHTML=`<div class="users" id="lu">${us.map(x=>`<button data-u="${esc(x.id)}" aria-pressed="${x.id===sel}">${esc(x.nombre)}</button>`).join('')}</div>
+    if(!us.filter(x=>x.activo!==false).length){body.innerHTML=`<p><b>Faltan los usuarios.</b></p><p class="sm">El jefe debe ejecutar <code>node tests/seed-usuarios.mjs</code> una vez (ver README).</p>`;return}
+    const act=us.filter(x=>x.activo!==false);let sel=pref('lastUser');if(!act.find(x=>x.id===sel))sel=act[0].id;let fails=0,lock=0;
+    body.innerHTML=`<div class="users" id="lu">${act.map(x=>`<button data-u="${esc(x.id)}" aria-pressed="${x.id===sel}">${esc(x.nombre)}</button>`).join('')}</div>
      <input id="lpin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN" aria-label="PIN">
      <div class="err" id="lerr"></div><button class="btn k1" id="lgo" style="padding:12px">Entrar</button>`;
     $('#lu').onclick=e=>{const b=e.target.closest('button');if(!b)return;sel=b.dataset.u;document.querySelectorAll('#lu button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));$('#lpin').focus()};
     const go_=async()=>{
       if(Date.now()<lock){$('#lerr').textContent='Espera unos segundos antes de reintentar.';return}
-      const u=us.find(x=>x.id===sel),pin=$('#lpin').value.trim();
+      const u=act.find(x=>x.id===sel),pin=$('#lpin').value.trim();
       if(u&&pin&&await hashPin(u.sal,u.id,pin)===u.pinHash){pref('lastUser',u.id);return entrar(u)}
       fails++;$('#lpin').value='';$('#lerr').textContent='PIN incorrecto.';if(fails>=5){lock=Date.now()+30000;fails=0;$('#lerr').textContent='Demasiados intentos. Espera 30 segundos.'}
     };

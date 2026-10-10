@@ -15,7 +15,7 @@ async function abrir(vp){
   const ctx=await browser.newContext({viewport:vp,timezoneId:'America/Guatemala'});const page=await ctx.newPage();
   const errs=[];page.on('pageerror',e=>errs.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!/fonts|favicon|ERR_/i.test(m.text()))errs.push(m.text())});
   await page.route(/gstatic\.com\/firebasejs\/.*\/firebase-(app|auth|firestore)\.js/,r=>{const k=r.request().url().match(/firebase-(\w+)\.js/)[1];r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(dir,mods[k]),'utf8')})});
-  await page.addInitScript(s=>{globalThis.__DB=globalThis.__DB||JSON.parse(s)},JSON.stringify(seed));
+  await page.addInitScript(s=>{const p=sessionStorage.getItem('__fakeDB');globalThis.__DB=JSON.parse(p||s)},JSON.stringify(seed));
   await page.goto(pathToFileURL(path.join(root,'index.html')).href);
   await page.waitForSelector('#lu');
   return {ctx,page,errs};
@@ -50,6 +50,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('bitácora guarda usuario',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.some(b=>b.usuario==='Ricardo'&&/Autorizado/.test(b.resultado))));
     ok('bitácora conserva la entrada de importación',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.length===2));
     ok('asesor no ve Ajustes',!(await page.$('#cSave')));
+    await page.click('nav button[data-t="cartera"]');await page.fill('#fBus','5381');await page.click('tr[data-ver="5381"]');ok('Caso: sin enlace a TallerFLOW',!/TallerFLOW/i.test(await page.textContent('#caso')));ok('Caso: conserva Marcar en taller',!!(await page.$('button[data-a="taller"]')));await page.click('nav button[data-t="semana"]');
     ok('sin datos de casos en localStorage',await page.evaluate(()=>!Object.keys(localStorage).some(k=>/casos|cartera|agenda/i.test(k))));
     // Protección: monto menor al pendiente con Tipo "Total" (por defecto) se registra como Parcial
     await page.click('nav button[data-t="cartera"]');await page.fill('#fBus','5399');await page.click('tr[data-ver="5399"]');
@@ -89,12 +90,41 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   ok('consulta: sin pestaña Importar',await a.page.isHidden('nav button[data-t="importar"]'));
   await a.page.click('nav button[data-t="semana"]');ok('consulta: sin Ajustes',!(await a.page.$('#cSave')));
   await a.ctx.close();
+  // Cambiar PIN propio (Ricardo)
+  const r=await abrir({width:1280,height:900});await login(r.page,'Ricardo','222222');
+  await r.page.click('#cpin');await r.page.fill('#pA','999999');await r.page.fill('#pN1','654321');await r.page.fill('#pN2','654321');await r.page.click('#dOk');await r.page.waitForTimeout(300);
+  ok('cambiar PIN: rechaza PIN actual incorrecto',/actual no es correcto/.test(await r.page.textContent('#toast')));
+  await r.page.fill('#pA','222222');await r.page.fill('#pN2','000000');await r.page.click('#dOk');await r.page.waitForTimeout(300);
+  ok('cambiar PIN: rechaza si no coinciden',/no coinciden/.test(await r.page.textContent('#toast')));
+  await r.page.fill('#pN2','654321');await r.page.click('#dOk');await r.page.waitForTimeout(500);
+  ok('cambiar PIN: guardado',/PIN cambiado/.test(await r.page.textContent('#toast')));
+  await r.page.click('#salir');await r.page.waitForSelector('#lu');
+  await r.page.click('#lu button:has-text("Ricardo")');await r.page.fill('#lpin','222222');await r.page.click('#lgo');ok('PIN viejo ya no entra',/incorrecto/i.test(await r.page.textContent('#lerr')));
+  await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});ok('PIN nuevo entra',true);
+  await r.ctx.close();
   const b=await abrir({width:1280,height:900});await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
   ok('jefe: ve Ajustes',!!(await b.page.$('#cSave')));
   await b.page.click('nav button[data-t="importar"]');await b.page.setInputFiles('#file',xlsx);await b.page.waitForSelector('#kCart',{timeout:60000});await b.page.waitForTimeout(600);
   await b.page.click('nav button[data-t="hoy"]');await b.page.waitForTimeout(300);ok('jefe: aviso de respaldo en Hoy cuando no hay',/respaldo/i.test(await b.page.textContent('#hoy')));
   await b.page.click('nav button[data-t="semana"]');
-  await b.page.screenshot({path:path.join(out,'6-semana-jefe.png'),fullPage:true});await b.ctx.close();
+  await b.page.screenshot({path:path.join(out,'6-semana-jefe.png'),fullPage:true});
+  // Jefe agrega a Jacobo (consulta), Jacobo entra, jefe lo desactiva
+  await b.page.click('#uAdd');await b.page.fill('#uN','Jacobo');await b.page.selectOption('#uR','consulta');await b.page.fill('#uP','12');await b.page.click('#dOk');await b.page.waitForTimeout(300);
+  ok('usuario nuevo: exige 6 dígitos',/6 dígitos/.test(await b.page.textContent('#toast')));
+  await b.page.fill('#uP','777777');await b.page.click('#dOk');await b.page.waitForTimeout(600);
+  ok('usuario nuevo: aparece en la tabla',/Jacobo/.test(await b.page.textContent('#semana')));
+  await b.page.click('[data-upin="mario"]');await b.page.fill('#pN1','121212');await b.page.fill('#pN2','121212');await b.page.click('#dOk');await b.page.waitForTimeout(500);
+  ok('jefe restablece PIN de otro',/restablecido/.test(await b.page.textContent('#toast')));
+  await b.page.click('#salir');await b.page.waitForSelector('#lu');
+  await b.page.click('#lu button:has-text("Jacobo")');await b.page.fill('#lpin','777777');await b.page.click('#lgo');await b.page.waitForSelector('#login',{state:'hidden'});
+  ok('Jacobo (consulta) entra y no ve Importar',await b.page.isHidden('nav button[data-t="importar"]'));
+  await b.page.click('#salir');await b.page.waitForSelector('#lu');await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
+  await b.page.click('[data-uact="jacobo"]');await b.page.waitForTimeout(600);
+  ok('jefe desactiva a Jacobo',/Desactivado/.test(await b.page.textContent('#semana')));
+  ok('el jefe no puede desactivarse a sí mismo',!(await b.page.$('[data-uact="byron"]')));
+  await b.page.click('#salir');await b.page.waitForSelector('#lu');
+  ok('Jacobo desactivado no aparece al entrar',!(await b.page.textContent('#lu')).includes('Jacobo'));
+  await b.ctx.close();
   const m=await abrir({width:1280,height:900});await m.page.click('#lu button:has-text("Ricardo")');await m.page.fill('#lpin','000000');await m.page.click('#lgo');
   ok('PIN incorrecto rechazado',/incorrecto/i.test(await m.page.textContent('#lerr')));await m.ctx.close();
 }

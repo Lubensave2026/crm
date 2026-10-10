@@ -17,7 +17,7 @@ function snapOf(L){
   const T=tbl(L.c);let ids=Object.keys(T);
   if(L.type==='query'){const o=L.m.find(x=>x.o)?.o,lim=L.m.find(x=>x.l)?.l;if(o)ids.sort((a,b)=>String(T[b][o[0]]).localeCompare(String(T[a][o[0]])));if(lim)ids=ids.slice(0,lim)}
   return ids;}
-function notify(){for(const L of G.__L){
+function notify(){try{sessionStorage.setItem('__fakeDB',JSON.stringify(G.__DB))}catch(e){}for(const L of G.__L){
   if(L.type==='doc'){const d=tbl(L.c)[L.id];const j=JSON.stringify(d);if(j!==L.last){L.last=j;L.cb({exists:()=>!!d,data:()=>structuredClone(d),metadata:{fromCache:false}})}}
   else{const T=tbl(L.c),ids=snapOf(L),cur={};ids.forEach(i=>cur[i]=JSON.stringify(T[i]));const ch=[];
     for(const i of ids)if(cur[i]!==L.prev[i])ch.push({type:L.prev[i]===undefined?'added':'modified',doc:{id:i,data:()=>structuredClone(T[i])}});
@@ -25,7 +25,7 @@ function notify(){for(const L of G.__L){
     if(ch.length||!L.sent){L.sent=true;L.prev=cur;L.cb({docChanges:()=>ch,docs:ids.map(i=>({id:i,data:()=>structuredClone(T[i])})),metadata:{fromCache:false}})}}}}
 export function onSnapshot(t,a,b,c){const cb=typeof a==='function'?a:b;const L={...t,cb,prev:{},last:undefined,sent:false};G.__L.push(L);setTimeout(notify,0);return()=>{G.__L=G.__L.filter(x=>x!==L)}}
 export async function setDoc(r,d,o){const T=tbl(r.c);if(o&&o.merge)T[r.id]=merge(T[r.id]||{},d);else T[r.id]=merge({},d);notify()}
-export async function updateDoc(r,...args){const T=tbl(r.c);if(!T[r.id])throw Object.assign(new Error('not-found'),{code:'not-found'});
+export async function updateDoc(r,...args){const T=tbl(r.c);if(args.length===1&&args[0]&&typeof args[0]==='object')args=Object.entries(args[0]).flat();if(!T[r.id])throw Object.assign(new Error('not-found'),{code:'not-found'});
   for(let i=0;i<args.length;i+=2){const p=args[i],segs=p instanceof FieldPath?p.segs:String(p).split('.');setPath(T[r.id],segs,args[i+1])}notify()}
 export async function getDoc(r){const d=tbl(r.c)[r.id];return {exists:()=>!!d,data:()=>structuredClone(d)}}
 export async function getDocs(t){const T=tbl(t.c);return {docs:Object.keys(T).map(i=>({id:i,data:()=>structuredClone(T[i])}))}}
