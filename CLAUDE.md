@@ -22,4 +22,7 @@ CRM independiente (separado de los demás proyectos del usuario). Se publica en 
 - Reglas del prototipo que no se cambian sin avisar a Byron: ver `referencia/plan.md` y el prompt original.
 
 ## Estado
-- Fase 1 construida y probada con Firebase simulado. Pendiente: activar Auth anónima, ejecutar seed de usuarios, publicar en Pages y probar en vivo con 2 navegadores.
+- Fase 1 CERRADA y en vivo (2026-10-09): https://lubensave2026.github.io/crm/ . Verificado: importación (102 casos · Q1,068,512 · 54 avisos), reimportación sin duplicados, parcial OT 5381, sincronización en tiempo real entre dos usuarios.
+- Auth anónima activa, usuarios Byron/Ricardo/Mario creados con `tests/seed-usuarios.mjs` (PIN de 6 dígitos, no guardados en archivos).
+- Datos de prueba reales en producción: Ricardo ya registró contactos de prueba (OT 5381 parcial Q22,699, etc.).
+- Siguiente: Fase 2 = respaldo semanal exportable (Excel de cartera y bitácora) + ajustes tras probar con Ricardo.
