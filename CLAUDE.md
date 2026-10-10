@@ -25,4 +25,5 @@ CRM independiente (separado de los demás proyectos del usuario). Se publica en 
 - Fase 1 CERRADA y en vivo (2026-10-09): https://lubensave2026.github.io/crm/ . Verificado: importación (102 casos · Q1,068,512 · 54 avisos), reimportación sin duplicados, parcial OT 5381, sincronización en tiempo real entre dos usuarios.
 - Auth anónima activa, usuarios Byron/Ricardo/Mario creados con `tests/seed-usuarios.mjs` (PIN de 6 dígitos, no guardados en archivos).
 - Datos de prueba reales en producción: Ricardo ya registró contactos de prueba (OT 5381 parcial Q22,699, etc.).
-- Siguiente: Fase 2 = respaldo semanal exportable (Excel de cartera y bitácora) + ajustes tras probar con Ricardo.
+- Datos de prueba borrados y reimportados (2026-10-09); producción limpia.
+- Fase 2 hecha: respaldo en Excel (Semana → Respaldo, jefe/asesor, aviso a los 7 días al jefe) y plurales corregidos. Pendiente: ajustes de uso que pida Byron tras probar con Ricardo.

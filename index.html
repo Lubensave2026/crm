@@ -278,6 +278,24 @@ function planImport(rows,casos,o){
   }
   return {stats:{filas,ordenes:Object.keys(W).length,partidas:partidasN,nuevos:nNuevos,actualizados:nAct,recuperados:recup,montoRecuperado:recupQ,avisos},nuevos,cambios};
 }
+
+/* ---- Respaldo en Excel: filas por hoja (incluye casos cerrados) ---- */
+const SEMAF={rojo:'Crítico',amarillo:'Preventivo',verde:'Vigilar'};
+const r2=n=>Math.round((n||0)*100)/100;
+function filasRespaldo(casos){
+  const cs=Object.values(casos).sort((a,b)=>String(a.ot).localeCompare(String(b.ot),'es',{numeric:true}));
+  const H={Cartera:[],Partidas:[],'Bitácora':[],Recuperos:[]};
+  for(const c of cs){
+    const sg=c.seg||{};
+    H.Cartera.push({OT:c.ot,Cliente:c.cliente,'Móvil':c.movil,'Vehículo':c.vehiculo,Placa:c.placa,Km:c.km?+c.km:'','Fecha cotización':c.fecha,'Días':dias(c),Urgencia:SEMAF[c.sem]||'',Estado:c.estado,'Próximo contacto':c.proximo||'','Motivo de pérdida':c.motivo||'','Pendiente Q':r2(montoCaso(c)),'M.O. pendiente Q':r2(moCaso(c)),'Seg. 48 h':sg.s48?'Sí':'No','Seg. 7 d':sg.s7?'Sí':'No','Seg. 30 d':sg.s30?'Sí':'No','Actualizado por':c.actualizadoPor||'','Actualizado':c.actualizado||''});
+    for(const p of Object.values(c.partidas))H.Partidas.push({OT:c.ot,Cliente:c.cliente,'Punto de inspección':p.punto,'Estado Clear Mechanic':p.estadoCM,'Recuperada':p.recuperada?'Sí':'No','M.O. Q':r2(p.mo),'Total Q':r2(p.total),'Fecha CM':p.fechaCM||''});
+    for(const b of [...(c.bitacora||[])].sort((a,b)=>(a.ts||0)-(b.ts||0)))H['Bitácora'].push({Fecha:b.fecha,OT:c.ot,Cliente:c.cliente,Canal:b.canal,Resultado:b.resultado,Nota:b.nota||'',Usuario:b.usuario||''});
+    for(const r of (c.recuperos||[]))H.Recuperos.push({Fecha:r.fecha,OT:c.ot,Cliente:c.cliente,'Monto Q':r2(r.monto),'M.O. Q':r2(r.mo),Tipo:r.tipo,Usuario:r.usuario||''});
+  }
+  H['Bitácora'].sort((a,b)=>String(a.Fecha).localeCompare(String(b.Fecha)));H.Recuperos.sort((a,b)=>String(a.Fecha).localeCompare(String(b.Fecha)));
+  return H;
+}
+const pl=(n,u,v)=>n+' '+(n===1?u:v);
 /*@PURA-FIN*/
 
 /* ================= DATOS EN LA NUBE ================= */
@@ -420,6 +438,29 @@ function leerArchivo(file){
   const fr=new FileReader();fr.onload=e=>{try{const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});const ws=wb.Sheets[wb.SheetNames[0]];importar(XLSX.utils.sheet_to_json(ws,{header:1,raw:true}),file.name)}catch(err){$('#impRes').innerHTML=`<div class="empty"><b>No se pudo leer el archivo</b>${esc(err.message)}</div>`}};fr.readAsArrayBuffer(file);
 }
 
+/* ================= RESPALDO ================= */
+async function descargarRespaldo(){
+  if(!canAct()||!ready.casos)return;
+  if(!window.XLSX){toast('No se pudo cargar el lector de Excel');return}
+  const H=filasRespaldo(S.casos),sm=semanaStats(),ms=mesStats(),base=S.cfg.base==='mo'?ms.mo:ms.monto;
+  const ab=Object.values(S.casos).filter(abierto);
+  const resumen=[['Respaldo CRM Lube N Save Zona 10'],['Generado',TODAY+' por '+USER.nombre],[],
+    ['Casos en total',Object.keys(S.casos).length],['Casos abiertos',ab.length],['Cartera dormida Q',r2(ab.reduce((a,c)=>a+montoCaso(c),0))],
+    ['Recuperado total Q',r2(Object.values(S.casos).reduce((a,c)=>a+(c.recuperos||[]).reduce((x,r)=>x+r.monto,0),0))],
+    ['Recuperado de la semana Q',r2(sm.monto)],['Recuperado del mes Q',r2(ms.monto)],['Base del incentivo del mes Q',r2(base)],['Incentivo del mes Q',r2(incentivo(base))],
+    ['Última importación',S.imports[0]?S.imports[0].fecha+' ('+(S.imports[0].archivo||'')+')':'—']];
+  const wb=XLSX.utils.book_new();
+  const add=(n,ws,w)=>{ws['!cols']=w.map(x=>({wch:x}));XLSX.utils.book_append_sheet(wb,ws,n)};
+  add('Resumen',XLSX.utils.aoa_to_sheet(resumen),[30,46]);
+  add('Cartera',XLSX.utils.json_to_sheet(H.Cartera),[8,26,12,24,10,9,14,7,12,15,15,24,12,14,9,9,9,14,24]);
+  add('Partidas',XLSX.utils.json_to_sheet(H.Partidas),[8,26,46,20,11,10,10,12]);
+  add('Bitácora',XLSX.utils.json_to_sheet(H['Bitácora']),[12,8,26,16,34,40,12]);
+  add('Recuperos',XLSX.utils.json_to_sheet(H.Recuperos),[12,8,26,12,10,16,12]);
+  try{XLSX.writeFile(wb,'CRM_LNS_Respaldo_'+TODAY+'.xlsx')}catch(e){toast('No se pudo generar el archivo: '+e.message);return}
+  try{await setDoc(doc(db,'crm_config','zona10'),{ultimoRespaldo:{fecha:TODAY,por:USER.nombre,casos:Object.keys(S.casos).length}},{merge:true});toast('Respaldo descargado')}
+  catch(e){toast('Se descargó, pero no se pudo anotar la fecha: '+(e.code||e.message))}
+}
+
 /* ================= RENDER ================= */
 let tab='hoy',casoSel=null,fEst='Abiertos',fBus='';
 const loadingHtml=`<div class="empty"><b>Cargando datos…</b>Conectando con Firebase.</div>`;
@@ -441,13 +482,14 @@ function renderHoy(){
   if(!S.agenda[TODAY]){el.innerHTML=`<div><h1>Tus casos de hoy</h1></div><div class="empty"><b>${canAct()?'Armando la agenda de hoy…':'La agenda de hoy todavía no está armada'}</b>${canAct()?'Un momento.':'La arma el asesor al abrir el sistema.'}</div>`;return}
   const ag=S.agenda[TODAY].map(o=>S.casos[o]).filter(Boolean);
   const hechos=ag.filter(c=>c.resHoy&&c.resHoy.startsWith(TODAY)).length;
-  const sem=semanaStats();const ult=S.imports.length?S.imports[0].fecha:null;const atras=ult?daysBetween(ult,TODAY):null;
+  const sem=semanaStats();const ult=S.imports.length?S.imports[0].fecha:null;const atras=ult?daysBetween(ult,TODAY):null;const ub=S.cfg.ultimoRespaldo,bk=ub?daysBetween(ub.fecha,TODAY):null;
   el.innerHTML=`<div class="row"><div><h1>Tus casos de hoy</h1><p class="lead">Entre ${S.cfg.min} y ${S.cfg.max} casos por día: primero los reprogramados y los seguimientos que vencen (48 h · 7 d · 30 d), después los de mayor monto × urgencia. Registra el resultado de cada uno.</p></div>${canAct()?'<button class="btn" id="reAg">Rehacer agenda</button>':''}</div>
-   <div class="kpis"><div class="k hl"><div class="l">En juego hoy</div><div class="v">${Q(ag.reduce((a,c)=>a+montoCaso(c),0))}</div><div class="n">${ag.length} casos asignados</div></div>
+   <div class="kpis"><div class="k hl"><div class="l">En juego hoy</div><div class="v">${Q(ag.reduce((a,c)=>a+montoCaso(c),0))}</div><div class="n">${pl(ag.length,'caso asignado','casos asignados')}</div></div>
    <div class="k"><div class="l">Registrados</div><div class="v">${hechos} / ${ag.length}</div><div class="n">Meta: todos antes de las 12:00</div></div>
-   <div class="k"><div class="l">Recuperado esta semana</div><div class="v">${Q(sem.monto)}</div><div class="n">${sem.autor} casos autorizados</div></div></div>
+   <div class="k"><div class="l">Recuperado esta semana</div><div class="v">${Q(sem.monto)}</div><div class="n">${pl(sem.autor,'caso autorizado','casos autorizados')}</div></div></div>
    ${atras!==null&&atras>7?`<div class="msg"><b>Última carga de Clear Mechanic hace ${atras} días.</b> Sube el reporte de los últimos 30 días para no perder los seguimientos de 48 h y 7 días. ${canAct()?'<button class="btn" data-go="importar">Importar</button>':''}</div>`:''}
    ${!ult?`<div class="msg"><b>Aún no hay cargas registradas.</b></div>`:''}
+   ${isJefe()&&(bk===null||bk>7)?`<div class="msg"><b>${bk===null?'Todavía no hay respaldo del CRM.':'Último respaldo hace '+bk+' días.'}</b> Descárgalo en Semana → Respaldo. <button class="btn" data-go="semana">Ir a Semana</button></div>`:''}
    ${ag.length?ag.map(cardHoy).join(''):`<div class="empty"><b>Sin casos para hoy</b>No hay seguimientos pendientes en la cartera.</div>`}`;
 }
 function renderCartera(){
@@ -459,9 +501,9 @@ function renderCartera(){
   l.sort((a,b)=>montoCaso(b)-montoCaso(a)||(b.fecha||'').localeCompare(a.fecha||''));
   const rec=all.reduce((a,c)=>a+(c.recuperos||[]).reduce((x,r)=>x+r.monto,0),0);
   el.innerHTML=`<div><h1>Cartera de presupuestos</h1><p class="lead">Todo lo que el cliente no autorizó en Clear Mechanic entra aquí. Nada se cierra sin motivo registrado.</p></div>
-   <div class="kpis"><div class="k hl"><div class="l">Monto dormido</div><div class="v" id="kDorm">${Q(ab.reduce((a,c)=>a+montoCaso(c),0))}</div><div class="n">${ab.length} casos abiertos</div></div>
+   <div class="kpis"><div class="k hl"><div class="l">Monto dormido</div><div class="v" id="kDorm">${Q(ab.reduce((a,c)=>a+montoCaso(c),0))}</div><div class="n">${pl(ab.length,'caso abierto','casos abiertos')}</div></div>
    <div class="k"><div class="l">≥ Q5,000</div><div class="v">${ab.filter(c=>montoCaso(c)>=5000).length}</div><div class="n">${Q(ab.filter(c=>montoCaso(c)>=5000).reduce((a,c)=>a+montoCaso(c),0))}</div></div>
-   <div class="k"><div class="l">Recuperado total</div><div class="v">${Q(rec)}</div><div class="n">${all.filter(c=>c.estado==='Recuperado').length} casos cerrados</div></div>
+   <div class="k"><div class="l">Recuperado total</div><div class="v">${Q(rec)}</div><div class="n">${pl(all.filter(c=>c.estado==='Recuperado').length,'caso cerrado','casos cerrados')}</div></div>
    <div class="k"><div class="l">Perdidos</div><div class="v">${all.filter(c=>c.estado==='Perdido').length}</div><div class="n">con motivo registrado</div></div></div>
    <div class="toolbar"><select id="fEst" aria-label="Estado">${est.map(e=>`<option ${e===fEst?'selected':''}>${e}</option>`).join('')}</select><input id="fBus" type="search" placeholder="Buscar OT, cliente, placa…" value="${esc(fBus)}" aria-label="Buscar"></div>
    ${l.length?`<div class="tw"><table><thead><tr><th>OT</th><th>Cliente</th><th>Vehículo · Placa</th><th>Principal pendiente</th><th>Estado</th><th style="text-align:right">Días</th><th style="text-align:right">Monto</th></tr></thead><tbody>
@@ -518,6 +560,9 @@ function renderSemana(){
   <div class="panel"><h2>Incentivo de ${esc(S.cfg.asesor)} · mes en curso</h2>
    <p class="sm">Base: ${S.cfg.base==='mo'?'mano de obra recuperada':'monto recuperado'} del mes · ${S.cfg.pct1}% hasta la meta de ${Q(S.cfg.meta)} y ${S.cfg.pct2}% sobre el excedente.</p>
    <div class="kpis"><div class="k"><div class="l">Base del mes</div><div class="v">${Q(base)}</div><div class="bar" style="height:6px;margin-top:6px"><i class="y" style="width:${S.cfg.meta?Math.min(100,base/S.cfg.meta*100):0}%"></i></div><div class="n">${S.cfg.meta?Math.round(base/S.cfg.meta*100):0}% de la meta</div></div><div class="k hl"><div class="l">Incentivo</div><div class="v">${Q(inc)}</div><div class="n">propuesta, sujeta a aprobación</div></div></div></div></div>
+  ${canAct()?`<div class="panel"><h2>Respaldo</h2><p class="sm">Excel con la cartera, las partidas, la bitácora y los recuperos (incluye casos cerrados). Contiene datos de clientes: guárdalo solo en tu computadora o nube privada. Recomendado: cada sábado.</p>
+   <p class="sm" id="bkInfo">${S.cfg.ultimoRespaldo?`Último respaldo: <b>${fmtD(S.cfg.ultimoRespaldo.fecha)}</b> por ${esc(S.cfg.ultimoRespaldo.por||'—')} (${S.cfg.ultimoRespaldo.casos} casos).`:'Todavía no se ha descargado ningún respaldo.'}</p>
+   <div class="acts"><button class="btn k1" id="bkp">Descargar respaldo (Excel)</button></div></div>`:''}
   ${isJefe()?`<div class="panel"><h2>Ajustes</h2><div class="cfg">
    <label>Asesor<input id="c_asesor" value="${esc(S.cfg.asesor)}"></label>
    <label>Casos mínimos por día<input id="c_min" type="number" min="1" value="${S.cfg.min}"></label>
@@ -540,13 +585,14 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';tab=t;pref('tab',t==='caso'?
 /* ================= EVENTOS ================= */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir');if(!t)return;
+  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp');if(!t)return;
   if(t.id==='salir'){sess('user',null);location.reload();return}
   if(t.dataset.go)return go(t.dataset.go);
   if(t.dataset.ver){casoSel=t.dataset.ver;return go('caso')}
   if(t.dataset.a){if(t.tagName!=='A')e.preventDefault();return accion(t.dataset.ot,t.dataset.a)}
   if(t.dataset.copy){const c=S.casos[t.dataset.copy];try{await navigator.clipboard.writeText(mensaje(c));toast('Mensaje copiado')}catch(_){toast('No se pudo copiar: selecciona el texto')}return}
   if(t.dataset.sem){if(!canAct())return;wr(casoSel,['sem',t.dataset.sem]);return}
+  if(t.id==='bkp')return descargarRespaldo();
   if(t.id==='reAg'){if(canAct())await rehacerAgenda();return}
   if(t.id==='cSave'){if(!isJefe())return;const v=id=>$('#'+id).value;
     const cfg={asesor:v('c_asesor')||'Ricardo',min:Math.max(1,+v('c_min')||2),max:Math.max(1,+v('c_max')||5),meta:+v('c_meta')||0,pct1:+v('c_pct1')||0,pct2:+v('c_pct2')||0,base:v('c_base')};if(cfg.min>cfg.max)cfg.min=cfg.max;

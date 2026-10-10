@@ -57,6 +57,16 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('Total→Parcial automático al bajar el monto',(await page.inputValue('#aT'))==='parcial');
     await page.selectOption('#aT','total');await page.fill('#aM','5000');await page.dispatchEvent('#aT','change');await page.fill('#aM','5000');await page.click('#dOk');await page.waitForTimeout(400);
     ok('guardó como parcial y el caso sigue abierto',await page.evaluate(()=>{const c=__DB.crm_casos['5399'];return c.estado!=='Recuperado'&&c.recuperos.at(-1).tipo==='parcial'&&Object.values(c.partidas).every(p=>!p.recuperada)}));
+    // Respaldo en Excel
+    await page.click('nav button[data-t="semana"]');await page.waitForTimeout(200);
+    const [dl]=await Promise.all([page.waitForEvent('download'),page.click('#bkp')]);
+    const fx=path.join(out,'respaldo.xlsx');await dl.saveAs(fx);await page.waitForTimeout(300);
+    const XL=(await import('xlsx')).default;const wbk=XL.read(fs.readFileSync(fx),{type:'buffer'});
+    ok('respaldo: hojas',JSON.stringify(wbk.SheetNames)===JSON.stringify(['Resumen','Cartera','Partidas','Bitácora','Recuperos']));
+    ok('respaldo: 102 casos en Cartera',XL.utils.sheet_to_json(wbk.Sheets.Cartera).length===102);
+    ok('respaldo: nombre con fecha',/^CRM_LNS_Respaldo_\d{4}-\d{2}-\d{2}\.xlsx$/.test(dl.suggestedFilename()));
+    ok('respaldo: se anota en crm_config',await page.evaluate(()=>__DB.crm_config.zona10.ultimoRespaldo?.por==='Ricardo'));
+    ok('respaldo: la pantalla muestra el último respaldo',/Último respaldo/.test(await page.textContent('#bkInfo')));
     // Hoy: registrar "Sin respuesta" en el primer caso
     await page.click('nav button[data-t="hoy"]');await page.waitForTimeout(200);
     const antesH=await page.evaluate(()=>Object.values(__DB.crm_casos).filter(c=>c.resHoy).length);
@@ -75,11 +85,15 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
 }
 {
   const a=await abrir({width:1280,height:900});await login(a.page,'Mario','333333');
+  await a.page.click('nav button[data-t="semana"]');ok('consulta: sin botón de respaldo',!(await a.page.$('#bkp')));
   ok('consulta: sin pestaña Importar',await a.page.isHidden('nav button[data-t="importar"]'));
   await a.page.click('nav button[data-t="semana"]');ok('consulta: sin Ajustes',!(await a.page.$('#cSave')));
   await a.ctx.close();
   const b=await abrir({width:1280,height:900});await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
   ok('jefe: ve Ajustes',!!(await b.page.$('#cSave')));
+  await b.page.click('nav button[data-t="importar"]');await b.page.setInputFiles('#file',xlsx);await b.page.waitForSelector('#kCart',{timeout:60000});await b.page.waitForTimeout(600);
+  await b.page.click('nav button[data-t="hoy"]');await b.page.waitForTimeout(300);ok('jefe: aviso de respaldo en Hoy cuando no hay',/respaldo/i.test(await b.page.textContent('#hoy')));
+  await b.page.click('nav button[data-t="semana"]');
   await b.page.screenshot({path:path.join(out,'6-semana-jefe.png'),fullPage:true});await b.ctx.close();
   const m=await abrir({width:1280,height:900});await m.page.click('#lu button:has-text("Ricardo")');await m.page.fill('#lpin','000000');await m.page.click('#lgo');
   ok('PIN incorrecto rechazado',/incorrecto/i.test(await m.page.textContent('#lerr')));await m.ctx.close();

@@ -7,7 +7,7 @@ const dir=path.dirname(fileURLToPath(import.meta.url));
 const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
-const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q}')(HOY);
+const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl}')(HOY);
 const xlsx=fs.readdirSync(path.join(dir,'..','referencia')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
 const wb=XLSX.read(fs.readFileSync(path.join(dir,'..','referencia',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
@@ -38,4 +38,12 @@ ok('monto recuperado detectado',Math.round(p3.stats.montoRecuperado),Math.round(
 
 const ag=L.computeAgenda(casos,{min:2,max:5},[]);
 ok('agenda entre 2 y 5',ag.length>=2&&ag.length<=5,true);
+
+const H=L.filasRespaldo(casos);
+ok('respaldo: filas de Cartera',H.Cartera.length,102);
+ok('respaldo: partidas = suma de partidas',H.Partidas.length,Object.values(casos).reduce((a,c)=>a+Object.keys(c.partidas).length,0));
+ok('respaldo: bitácora (1 por caso + parcial)',H['Bitácora'].length,102);
+ok('respaldo: recuperos',H.Recuperos.length,1);
+ok('respaldo: pendiente suma = cartera',Math.round(H.Cartera.filter(r=>!['Recuperado','Perdido','En taller'].includes(r.Estado)).reduce((a,r)=>a+r['Pendiente Q'],0)),1045813);
+ok('plural 1',L.pl(1,'caso','casos'),'1 caso');ok('plural 2',L.pl(2,'caso','casos'),'2 casos');
 process.exit(fallos?1:0);

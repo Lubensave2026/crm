@@ -10,6 +10,9 @@ Un solo archivo (`index.html`), Firebase (Firestore + Auth anónima) y GitHub Pa
 - **Importación:** solo filas `Cotización - Total`; clave OT + punto de inspección; reimportar no duplica.
 - **TallerFLOW:** solo el enlace "Abrir orden en TallerFLOW". El CRM no lee ni escribe su Firebase.
 
+## Respaldo semanal
+En **Semana → Respaldo** (jefe y asesor) se descarga `CRM_LNS_Respaldo_AAAA-MM-DD.xlsx` con las hojas Resumen, Cartera, Partidas, Bitácora y Recuperos (incluye casos cerrados). La fecha del último respaldo se guarda en `crm_config/zona10.ultimoRespaldo`; si pasan más de 7 días, el jefe ve un aviso en "Hoy". El archivo trae datos de clientes: guardarlo fuera del repositorio (los `.xlsx` están en `.gitignore`). No hay restauración desde el Excel; si se perdiera la base, la cartera se reconstruye importando de Clear Mechanic, pero se perdería la bitácora.
+
 ## Puesta en marcha (una sola vez)
 1. Firebase: Firestore creado (nam5) y Authentication → método **Anónimo** activado.
 2. Reglas: `firebase deploy --only firestore:rules --project crm-lube-n-save`
