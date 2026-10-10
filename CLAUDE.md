@@ -7,7 +7,7 @@ CRM independiente (separado de los demás proyectos del usuario). Se publica en 
 - Hosting: GitHub Pages (no Firebase Hosting). Firebase se usa solo para datos/auth (Firestore, Auth, etc.).
 - Repo git en `main`. Remoto: `lubensave2026/crm` → https://lubensave2026.github.io/crm/
 - Firestore en `nam5`. Seguridad: opción A (PIN en cliente + auth anónima); ver README.
-- No tocar TallerFLOW ni su Firebase `lube-n-save-flow`; solo existe el enlace de apertura de órdenes.
+- Sin relación con TallerFLOW: no tocarlo ni su Firebase `lube-n-save-flow`. El enlace "Abrir orden en TallerFLOW" se quitó (2026-10-09). Se conserva "Marcar en taller".
 
 ## Reglas de trabajo
 - Este proyecto es aislado: no mezclar código, credenciales, memoria ni configuración de otros proyectos.
@@ -26,4 +26,5 @@ CRM independiente (separado de los demás proyectos del usuario). Se publica en 
 - Auth anónima activa, usuarios Byron/Ricardo/Mario creados con `tests/seed-usuarios.mjs` (PIN de 6 dígitos, no guardados en archivos).
 - Datos de prueba reales en producción: Ricardo ya registró contactos de prueba (OT 5381 parcial Q22,699, etc.).
 - Datos de prueba borrados y reimportados (2026-10-09); producción limpia.
+- Usuarios: cambio de PIN propio, y el jefe agrega/restablece/desactiva usuarios desde Ajustes. Plan a futuro: copias independientes por sede (Carretera al Salvador, Aguilar Batres) con el mismo código y bloque de configuración; cada sede usa su propio Clear Mechanic y no tiene TallerFLOW; metas e incentivos los define cada encargado con Jacobo.
 - Fase 2 hecha: respaldo en Excel (Semana → Respaldo, jefe/asesor, aviso a los 7 días al jefe) y plurales corregidos. Pendiente: ajustes de uso que pida Byron tras probar con Ricardo.

@@ -4,11 +4,12 @@ Sistema para recuperar presupuestos no autorizados en Clear Mechanic (Lube N Sav
 Un solo archivo (`index.html`), Firebase (Firestore + Auth anónima) y GitHub Pages: https://lubensave2026.github.io/crm/
 
 ## Cómo funciona
-- **Datos:** Firestore, proyecto `crm-lube-n-save` (independiente de TallerFLOW). Colecciones `crm_casos`, `crm_agenda`, `crm_config`, `crm_importaciones`, `crm_usuarios`. No se guarda ningún dato en localStorage (solo la pestaña activa y el último usuario).
+- **Datos:** Firestore, proyecto `crm-lube-n-save` (independiente de otros proyectos). Colecciones `crm_casos`, `crm_agenda`, `crm_config`, `crm_importaciones`, `crm_usuarios`. No se guarda ningún dato en localStorage (solo la pestaña activa y el último usuario).
 - **Escrituras:** por documento (`updateDoc`, `arrayUnion` para bitácora y recuperos). La importación usa `writeBatch` en lotes de 450 operaciones. La agenda del día se crea con una transacción.
 - **Acceso:** PIN de 6 dígitos por usuario. Roles: `jefe` (todo), `asesor` (todo menos Ajustes), `consulta` (solo lectura).
 - **Importación:** solo filas `Cotización - Total`; clave OT + punto de inspección; reimportar no duplica.
-- **TallerFLOW:** solo el enlace "Abrir orden en TallerFLOW". El CRM no lee ni escribe su Firebase.
+- **TallerFLOW:** sin relación. El CRM no tiene enlaces ni acceso a TallerFLOW.
+- **PIN y usuarios:** cada usuario cambia su PIN con "Cambiar PIN" (arriba). El jefe, en Semana → Ajustes → Usuarios y accesos, agrega usuarios, restablece PIN y desactiva accesos (no se borran; `activo:false`).
 
 ## Respaldo semanal
 En **Semana → Respaldo** (jefe y asesor) se descarga `CRM_LNS_Respaldo_AAAA-MM-DD.xlsx` con las hojas Resumen, Cartera, Partidas, Bitácora y Recuperos (incluye casos cerrados). La fecha del último respaldo se guarda en `crm_config/zona10.ultimoRespaldo`; si pasan más de 7 días, el jefe ve un aviso en "Hoy". El archivo trae datos de clientes: guardarlo fuera del repositorio (los `.xlsx` están en `.gitignore`). No hay restauración desde el Excel; si se perdiera la base, la cartera se reconstruye importando de Clear Mechanic, pero se perdería la bitácora.
