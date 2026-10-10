@@ -359,12 +359,19 @@ function dlgAutorizo(c){
    <label>Tipo<select id="aT"><option value="total">Total</option><option value="parcial">Parcial</option></select></label>
    <label>Monto autorizado (Q)<input id="aM" type="number" min="0" value="${Math.round(m)}"></label>
    <label>Mano de obra autorizada (Q)<input id="aMO" type="number" min="0" value="${Math.round(mo)}"></label>
-   <label>Nota<input id="aN" placeholder="Ej.: autorizó frenos, A/C queda pendiente"></label>`,()=>{
-    const tipo=$('#aT').value,monto=+$('#aM').value||0,moA=+$('#aMO').value||0,nota=$('#aN').value;
+   <label>Nota<input id="aN" placeholder="Ej.: autorizó frenos, A/C queda pendiente"></label>
+   <p class="note" id="aHint">Total cierra el caso completo. Si el cliente autorizó solo una parte, usa Parcial: el resto sigue en la cartera.</p>`,()=>{
+    let tipo=$('#aT').value;const monto=+$('#aM').value||0,moA=+$('#aMO').value||0,nota=$('#aN').value;
     if(!monto){toast('Escribe el monto autorizado');return false}
+    if(tipo==='total'&&monto<Math.round(m)){tipo='parcial';toast('El monto es menor al pendiente: se registró como Parcial y el resto sigue en la cartera')}
     const p=[...stagePairs(c),'recuperos',arrayUnion({fecha:TODAY,monto,mo:moA,tipo,usuario:USER.nombre}),'bitacora',arrayUnion(ent('WhatsApp','Autorizado '+tipo,Q(monto)+' · '+nota)),'resHoy',TODAY+'|Autorizado'];
     if(tipo==='total'){p.push('estado','Recuperado');for(const [k,x] of Object.entries(c.partidas))if(x.estadoCM!=='Aprobado')p.push(new FieldPath('partidas',k,'recuperada'),true)}else p.push('estado','En negociación');
-    wr(c.ot,p).then(k=>k&&toast('Recuperado '+Q(monto)+' · abre la orden en TallerFLOW'));});
+    wr(c.ot,p).then(k=>k&&toast((tipo==='total'?'Recuperado ':'Autorizado parcial ')+Q(monto)+' · abre la orden en TallerFLOW'));});
+  /* El tipo sigue al monto: menos que el pendiente = Parcial; todo el pendiente = Total */
+  const aT=$('#aT'),aM=$('#aM'),aMO=$('#aMO'),hint=$('#aHint'),pend=Math.round(m);
+  const sync=()=>{const v=+aM.value||0;if(v>0&&v<pend){aT.value='parcial';hint.textContent='Monto menor al pendiente: se registra como Parcial y el resto ('+Q(pend-v)+') sigue en la cartera.'}else if(v>=pend){aT.value='total';hint.textContent='Cubre todo lo pendiente: el caso se cierra como Recuperado.'}};
+  aM.addEventListener('input',sync);
+  aT.addEventListener('change',()=>{if(aT.value==='total'){aM.value=pend;aMO.value=Math.round(mo);hint.textContent='Cubre todo lo pendiente: el caso se cierra como Recuperado.'}else if((+aM.value||0)>=pend)aM.value='';});
 }
 function dlgRepro(c){openDlg(`<h2>Reprogramar · OT ${esc(c.ot)}</h2><label>Próximo contacto<input id="rD" type="date" value="${addDays(TODAY,7)}"></label><label>Nota<input id="rN" placeholder="Ej.: cobra en quincena"></label>`,()=>{const d=$('#rD').value;if(!d){toast('Elige la fecha');return false}
   wr(c.ot,[...stagePairs(c),'estado','Reprogramado','proximo',d,'bitacora',arrayUnion(ent('WhatsApp','Reprogramado','Para '+fmtD(d)+' · '+$('#rN').value)),'resHoy',TODAY+'|Reprogramado'])})}

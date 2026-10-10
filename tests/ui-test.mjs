@@ -51,6 +51,12 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('bitácora conserva la entrada de importación',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.length===2));
     ok('asesor no ve Ajustes',!(await page.$('#cSave')));
     ok('sin datos de casos en localStorage',await page.evaluate(()=>!Object.keys(localStorage).some(k=>/casos|cartera|agenda/i.test(k))));
+    // Protección: monto menor al pendiente con Tipo "Total" (por defecto) se registra como Parcial
+    await page.click('nav button[data-t="cartera"]');await page.fill('#fBus','5399');await page.click('tr[data-ver="5399"]');
+    await page.click('button[data-a="autorizo"]');await page.fill('#aM','5000');
+    ok('Total→Parcial automático al bajar el monto',(await page.inputValue('#aT'))==='parcial');
+    await page.selectOption('#aT','total');await page.fill('#aM','5000');await page.dispatchEvent('#aT','change');await page.fill('#aM','5000');await page.click('#dOk');await page.waitForTimeout(400);
+    ok('guardó como parcial y el caso sigue abierto',await page.evaluate(()=>{const c=__DB.crm_casos['5399'];return c.estado!=='Recuperado'&&c.recuperos.at(-1).tipo==='parcial'&&Object.values(c.partidas).every(p=>!p.recuperada)}));
     // Hoy: registrar "Sin respuesta" en el primer caso
     await page.click('nav button[data-t="hoy"]');await page.waitForTimeout(200);
     const antesH=await page.evaluate(()=>Object.values(__DB.crm_casos).filter(c=>c.resHoy).length);
