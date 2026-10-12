@@ -7,7 +7,7 @@ const dir=path.dirname(fileURLToPath(import.meta.url));
 const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
-const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl}')(HOY);
+const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte}')(HOY);
 const xlsx=fs.readdirSync(path.join(dir,'..','referencia')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
 const wb=XLSX.read(fs.readFileSync(path.join(dir,'..','referencia',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
@@ -46,4 +46,25 @@ ok('respaldo: bitácora (1 por caso + parcial)',H['Bitácora'].length,102);
 ok('respaldo: recuperos',H.Recuperos.length,1);
 ok('respaldo: pendiente suma = cartera',Math.round(H.Cartera.filter(r=>!['Recuperado','Perdido','En taller'].includes(r.Estado)).reduce((a,r)=>a+r['Pendiente Q'],0)),1045813);
 ok('plural 1',L.pl(1,'caso','casos'),'1 caso');ok('plural 2',L.pl(2,'caso','casos'),'2 casos');
+
+// ---- Enlaces de inspección (Formas de Inspección) ----
+const fx=fs.readdirSync(path.join(dir,'..','referencia')).find(f=>/Formas.*\.xlsx$/.test(f)&&!f.startsWith('~'));
+if(fx){
+  const wb2=XLSX.read(fs.readFileSync(path.join(dir,'..','referencia',fx)),{type:'buffer',cellDates:true});
+  const rowsE=XLSX.utils.sheet_to_json(wb2.Sheets[wb2.SheetNames[0]],{header:1,raw:true});
+  ok('tipo: cotizaciones',L.tipoReporte(rows),'cotizaciones');ok('tipo: enlaces',L.tipoReporte(rowsE),'enlaces');
+  const e1=L.planEnlaces(rowsE,{});
+  ok('enlaces: filas',e1.stats.filas,220);ok('enlaces: nuevos',e1.stats.nuevos,220);ok('enlaces: inválidos',e1.stats.invalidos,0);
+  ok('enlaces: formato',/^https:\/\/vehi\.mobi\/\w+$/.test(e1.cambios['5431']),true);
+  const e2=L.planEnlaces(rowsE,e1.cambios);
+  ok('reimport enlaces: sin cambios',Object.keys(e2.cambios).length,0);ok('reimport enlaces: iguales',e2.stats.iguales,220);
+  const e3=L.planEnlaces(rowsE,{...e1.cambios,'5431':'https://vehi.mobi/viejo'});
+  ok('enlace distinto se actualiza',e3.stats.actualizados,1);
+  const ab=Object.values(casos).filter(L.abierto);
+  ok('casos abiertos con enlace',ab.filter(c=>e1.cambios[c.ot]).length,ab.length-2);
+  ok('respaldo trae el enlace',L.filasRespaldo(casos,e1.cambios).Cartera.filter(r=>r['Enlace de inspección']).length,ab.length-2+Object.values(casos).filter(c=>!L.abierto(c)&&e1.cambios[c.ot]).length);
+  const raro=rowsE.map(r=>r.slice());raro[1][12]='javascript:alert(1)';
+  ok('rechaza enlaces que no son https',L.planEnlaces(raro,{}).stats.invalidos,1);
+  ok('error si falta Orden digital',L.planEnlaces([['OR #','Nombre']],{}).error[0],'Orden digital');
+}
 process.exit(fallos?1:0);

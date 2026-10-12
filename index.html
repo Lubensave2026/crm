@@ -124,9 +124,9 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
 <section class="scr" id="cartera" hidden></section>
 <section class="scr" id="caso" hidden></section>
 <section class="scr" id="importar" hidden>
-  <div><h1>Importar desde Clear Mechanic</h1><p class="lead"><b>Carga semanal, cada lunes:</b> descarga en Clear Mechanic el “Reporte de Actividad – Cotizaciones” de los <b>últimos 30 días</b> y súbelo aquí. El sistema crea los casos nuevos, actualiza los existentes y detecta lo que el cliente aprobó después. Nunca duplica, así que no importa que las fechas se traslapen. Cada 3 meses puedes subir el trimestre completo como barrida.</p></div>
-  <label class="drop" id="drop" for="file"><b>Arrastra aquí el Excel de Clear Mechanic o haz clic para buscarlo</b><br><span class="sm">Lunes · rango: últimos 30 días · “Lube N Save Zona 10 - Reporte de Actividad - Cotizaciones - …xlsx”</span></label>
-  <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden>
+  <div><h1>Importar desde Clear Mechanic</h1><p class="lead"><b>Carga semanal, cada lunes:</b> descarga en Clear Mechanic el “Reporte de Actividad – Cotizaciones” de los <b>últimos 30 días</b>, junto con el de <b>Formas de Inspección</b> (trae el enlace de fotos y videos de cada orden), y súbelos aquí. El sistema crea los casos nuevos, actualiza los existentes y detecta lo que el cliente aprobó después. Nunca duplica, así que no importa que las fechas se traslapen. Cada 3 meses puedes subir el trimestre completo como barrida.</p></div>
+  <label class="drop" id="drop" for="file"><b>Arrastra aquí los Excel de Clear Mechanic o haz clic para buscarlos</b><br><span class="sm">Los dos reportes a la vez o uno por uno: “…Reporte de Actividad - Cotizaciones…xlsx” y “…Reporte de Actividad - Formas de Inspeccion…xlsx”. El sistema reconoce cuál es cuál.</span></label>
+  <input type="file" id="file" accept=".xlsx,.xls,.csv" multiple hidden>
   <div class="sm" id="impUlt"></div>
   <div id="impRes"></div>
   <div class="panel">
@@ -134,6 +134,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
     <p class="sm"><b>Clave única:</b> número de OT + punto de inspección. Si la partida ya existe, se actualiza; nunca se duplica.</p>
     <p class="sm"><b>Rechazado o Pendiente con precio</b> → entra a la cartera con fecha para los seguimientos de 48 h, 7 días y 30 días.</p>
     <p class="sm"><b>Pasó a Aprobado</b> en una carga posterior → se marca como recuperado automáticamente y suma al monto recuperado.</p>
+    <p class="sm"><b>Formas de Inspección</b> → asigna a cada orden su enlace de fotos y videos (columna “Orden digital”). Se puede cargar antes o después de las cotizaciones; el enlace aparece en el caso y en el mensaje de WhatsApp.</p>
     <p class="sm"><b>Partidas sin precio</b> → se reportan como avisos de calidad para corregir en Clear Mechanic.</p>
   </div>
 </section>
@@ -173,8 +174,8 @@ const FB_CFG={apiKey:"AIzaSyAf8qbial6VACkhtM6po9N97osPQ-hEnac",authDomain:"crm-l
 const app=initializeApp(FB_CFG),auth=getAuth(app),db=initializeFirestore(app,{ignoreUndefinedProperties:true});
 
 const DEF_CFG={min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'};
-let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[]};
-let USER=null,US=[];const ready={casos:false,agenda:false,cfg:false};
+let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null};
+let USER=null,US=[];const ready={casos:false,agenda:false,cfg:false,enl:false};
 const gtToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:'America/Guatemala'});
 let TODAY=gtToday();
 const iso=()=>new Date().toISOString();
@@ -282,12 +283,12 @@ function planImport(rows,casos,o){
 /* ---- Respaldo en Excel: filas por hoja (incluye casos cerrados) ---- */
 const SEMAF={rojo:'Crítico',amarillo:'Preventivo',verde:'Vigilar'};
 const r2=n=>Math.round((n||0)*100)/100;
-function filasRespaldo(casos){
+function filasRespaldo(casos,enlaces){
   const cs=Object.values(casos).sort((a,b)=>String(a.ot).localeCompare(String(b.ot),'es',{numeric:true}));
   const H={Cartera:[],Partidas:[],'Bitácora':[],Recuperos:[]};
   for(const c of cs){
     const sg=c.seg||{};
-    H.Cartera.push({OT:c.ot,Cliente:c.cliente,'Móvil':c.movil,'Vehículo':c.vehiculo,Placa:c.placa,Km:c.km?+c.km:'','Fecha cotización':c.fecha,'Días':dias(c),Urgencia:SEMAF[c.sem]||'',Estado:c.estado,'Próximo contacto':c.proximo||'','Motivo de pérdida':c.motivo||'','Pendiente Q':r2(montoCaso(c)),'M.O. pendiente Q':r2(moCaso(c)),'Seg. 48 h':sg.s48?'Sí':'No','Seg. 7 d':sg.s7?'Sí':'No','Seg. 30 d':sg.s30?'Sí':'No','Actualizado por':c.actualizadoPor||'','Actualizado':c.actualizado||''});
+    H.Cartera.push({OT:c.ot,Cliente:c.cliente,'Móvil':c.movil,'Vehículo':c.vehiculo,Placa:c.placa,'Enlace de inspección':(enlaces||{})[c.ot]||'',Km:c.km?+c.km:'','Fecha cotización':c.fecha,'Días':dias(c),Urgencia:SEMAF[c.sem]||'',Estado:c.estado,'Próximo contacto':c.proximo||'','Motivo de pérdida':c.motivo||'','Pendiente Q':r2(montoCaso(c)),'M.O. pendiente Q':r2(moCaso(c)),'Seg. 48 h':sg.s48?'Sí':'No','Seg. 7 d':sg.s7?'Sí':'No','Seg. 30 d':sg.s30?'Sí':'No','Actualizado por':c.actualizadoPor||'','Actualizado':c.actualizado||''});
     for(const p of Object.values(c.partidas))H.Partidas.push({OT:c.ot,Cliente:c.cliente,'Punto de inspección':p.punto,'Estado Clear Mechanic':p.estadoCM,'Recuperada':p.recuperada?'Sí':'No','M.O. Q':r2(p.mo),'Total Q':r2(p.total),'Fecha CM':p.fechaCM||''});
     for(const b of [...(c.bitacora||[])].sort((a,b)=>(a.ts||0)-(b.ts||0)))H['Bitácora'].push({Fecha:b.fecha,OT:c.ot,Cliente:c.cliente,Canal:b.canal,Resultado:b.resultado,Nota:b.nota||'',Usuario:b.usuario||''});
     for(const r of (c.recuperos||[]))H.Recuperos.push({Fecha:r.fecha,OT:c.ot,Cliente:c.cliente,'Monto Q':r2(r.monto),'M.O. Q':r2(r.mo),Tipo:r.tipo,Usuario:r.usuario||''});
@@ -296,6 +297,22 @@ function filasRespaldo(casos){
   return H;
 }
 const pl=(n,u,v)=>n+' '+(n===1?u:v);
+
+/* ---- Reporte "Formas de Inspección": enlace (Orden digital) por OT ---- */
+function tipoReporte(rows){const h=(rows[0]||[]).map(norm);return h.includes('ordendigital')?'enlaces':(h.includes('puntodeinspeccion')&&h.includes('cotizaciontotal'))?'cotizaciones':null}
+function planEnlaces(rows,actuales){
+  const head=rows[0].map(norm),iOt=head.findIndex(h=>COLS.ot.includes(h)),iUrl=head.indexOf('ordendigital');
+  if(iOt<0||iUrl<0)return {error:[iOt<0?'OR #':null,iUrl<0?'Orden digital':null].filter(Boolean)};
+  let filas=0,invalidos=0;const cambios={};
+  for(const r of rows.slice(1)){
+    if(!r||!r[iOt])continue;filas++;
+    const ot=otId(r[iOt]),u=String(r[iUrl]||'').trim();
+    if(!/^https:\/\/[^\s"'<>]+$/.test(u)){invalidos++;continue}
+    if(actuales[ot]!==u)cambios[ot]=u;
+  }
+  const ks=Object.keys(cambios),nuevos=ks.filter(k=>!actuales[k]).length;
+  return {stats:{filas,nuevos,actualizados:ks.length-nuevos,iguales:filas-invalidos-ks.length,invalidos},cambios};
+}
 /*@PURA-FIN*/
 
 /* ================= DATOS EN LA NUBE ================= */
@@ -311,10 +328,11 @@ function startSync(){
   unsubs.push(onSnapshot(collection(db,'crm_agenda'),snap=>{
     snap.docChanges().forEach(d=>{if(d.type==='removed')delete S.agenda[d.doc.id];else S.agenda[d.doc.id]=d.doc.data().ots||[]});
     ready.agenda=true;scheduleRender();ensureAgenda()},syncErr));
+  unsubs.push(onSnapshot(doc(db,'crm_enlaces','zona10'),s=>{const d=s.exists()?s.data():{};S.enlaces=d.urls||{};S.enlUlt=d.ultima||null;ready.enl=true;scheduleRender()},syncErr));
   unsubs.push(onSnapshot(doc(db,'crm_config','zona10'),s=>{S.cfg={...DEF_CFG,...(s.exists()?s.data():{})};ready.cfg=true;scheduleRender()},syncErr));
   unsubs.push(onSnapshot(query(collection(db,'crm_importaciones'),orderBy('creada','desc'),limit(10)),snap=>{S.imports=snap.docs.map(d=>d.data());scheduleRender()},syncErr));
 }
-function stopSync(){unsubs.splice(0).forEach(u=>u());S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[]};ready.casos=ready.agenda=ready.cfg=false}
+function stopSync(){unsubs.splice(0).forEach(u=>u());S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null};ready.casos=ready.agenda=ready.cfg=ready.enl=false}
 
 const canAct=()=>USER&&USER.rol!=='consulta';
 const isJefe=()=>USER&&USER.rol==='jefe';
@@ -339,13 +357,16 @@ const MES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','di
 const fmtD=d=>{if(!d)return '—';const [y,m,dd]=d.split('-');return +dd+' '+MES[m-1]};
 function toast(t){const e=$('#toast');e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,3200)}
 function topItems(c,n=2){return pendientes(c).sort((a,b)=>b.total-a.total).slice(0,n)}
+const enlaceDe=c=>{const u=S.enlaces[c.ot];return /^https:\/\//.test(u||'')?u:null};
+const verRep=(c,t='Ver reporte',k='btn')=>{const u=enlaceDe(c);return u?`<a class="${k}" href="${esc(u)}" target="_blank" rel="noopener">${t}</a>`:''};
 function mensaje(c){
+  const lk=enlaceDe(c),fo=lk?`. Aquí puede ver las fotos, videos y el detalle de su inspección: ${lk} 📷`:'; le comparto las fotos 📷.',ver=lk?` Aquí puede ver las fotos y el detalle de su inspección: ${lk}`:'';
   const st=dueStage(c),n=first(c.cliente)||'[Nombre]',it=topItems(c),tit=it.map(p=>{const t=p.punto.toLowerCase().replace(/\s+/g,' ').trim();return t.length>40?t.slice(0,40).replace(/\s\S*$/,'')+'…':t}).join(' y ');
   const tot=Q(it.reduce((a,p)=>a+p.total,0));
-  if(st&&st.k==='s48')return `Buen día, ${n}. Le saluda ${S.cfg.asesor} de Lube N Save Zona 10. En la inspección de su ${c.vehiculo} encontramos que necesita atención en ${tit}; le comparto las fotos 📷. Le recomendamos atenderlo pronto para evitar un daño mayor. El presupuesto de esas partidas es de ${tot}, con garantía del taller. ¿Le reservo espacio esta semana?`;
-  if(st&&st.k==='s7')return `${n}, le escribo sobre ${tit} de su ${c.vehiculo}. Si le parece, podemos hacer primero lo más urgente (${tot}) y dejar el resto para su próximo servicio. ¿Qué día le queda mejor?`;
-  if(st&&st.k==='s30')return `Hola, ${n}. Solo para recordarle que en la última visita de su ${c.vehiculo} quedó pendiente ${tit}. Cuando guste se lo programamos; recuerde que entregamos todos los vehículos con car wash de cortesía. 🚗`;
-  return `Hola, ${n}. Le saluda ${S.cfg.asesor} de Lube N Save Zona 10. Le escribo por lo que quedó pendiente en su ${c.vehiculo}: ${tit}. Tenemos espacio esta semana y le mantenemos el presupuesto de ${tot}. ¿Le agendo?`;
+  if(st&&st.k==='s48')return `Buen día, ${n}. Le saluda ${S.cfg.asesor} de Lube N Save Zona 10. En la inspección de su ${c.vehiculo} encontramos que necesita atención en ${tit}${fo} Le recomendamos atenderlo pronto para evitar un daño mayor. El presupuesto de esas partidas es de ${tot}, con garantía del taller. ¿Le reservo espacio esta semana?`;
+  if(st&&st.k==='s7')return `${n}, le escribo sobre ${tit} de su ${c.vehiculo}. Si le parece, podemos hacer primero lo más urgente (${tot}) y dejar el resto para su próximo servicio. ¿Qué día le queda mejor?${ver}`;
+  if(st&&st.k==='s30')return `Hola, ${n}. Solo para recordarle que en la última visita de su ${c.vehiculo} quedó pendiente ${tit}. Cuando guste se lo programamos; recuerde que entregamos todos los vehículos con car wash de cortesía. 🚗${ver}`;
+  return `Hola, ${n}. Le saluda ${S.cfg.asesor} de Lube N Save Zona 10. Le escribo por lo que quedó pendiente en su ${c.vehiculo}: ${tit}. Tenemos espacio esta semana y le mantenemos el presupuesto de ${tot}. ¿Le agendo?${ver}`;
 }
 function wa(c){const d=(c.movil||'').replace(/\D/g,'');if(d.length<8)return null;return 'https://wa.me/'+(d.length===8?'502'+d:d)+'?text='+encodeURIComponent(mensaje(c))}
 
@@ -396,7 +417,7 @@ function dlgPerdido(c){openDlg(`<h2>Perdido · OT ${esc(c.ot)}</h2><label>Motivo
   wr(c.ot,['estado','Perdido','motivo',m,'bitacora',arrayUnion(ent('WhatsApp','Perdido — '+m,$('#pN').value)),'resHoy',TODAY+'|Perdido'])})}
 
 /* ================= IMPORTAR ================= */
-async function guardarImportacion(plan,archivo){
+async function guardarImportacion(plan,archivo,prog){
   const ops=[];
   for(const {ot,doc:d} of plan.nuevos)ops.push(b=>b.set(ref(ot),d));
   for(const {ot,patch} of plan.cambios){
@@ -409,39 +430,68 @@ async function guardarImportacion(plan,archivo){
   ops.push(b=>b.set(doc(collection(db,'crm_importaciones')),{fecha:TODAY,creada:iso(),archivo,filas:st.filas,ordenes:st.ordenes,nuevos:st.nuevos,actualizados:st.actualizados,recuperados:st.recuperados,montoRecuperado:st.montoRecuperado,avisos:st.avisos,usuario:USER.nombre}));
   for(let i=0;i<ops.length;i+=450){
     const b=writeBatch(db);ops.slice(i,i+450).forEach(f=>f(b));
-    $('#impProg').textContent='Guardando en Firebase… '+Math.min(i+450,ops.length)+' de '+ops.length;
+    prog.textContent='Guardando en Firebase… '+Math.min(i+450,ops.length)+' de '+ops.length;
     await b.commit();
   }
 }
-async function importar(rows,archivo){
-  if(!canAct())return;
-  if(!ready.casos){$('#impRes').innerHTML=`<div class="empty"><b>Todavía no hay conexión con Firebase</b>Espera unos segundos y vuelve a intentarlo, para no pisar datos.</div>`;return}
+const vacio=(t,m)=>`<div class="empty"><b>${t}</b>${m}</div>`;
+async function importarCotizaciones(rows,archivo,box){
+  if(!ready.casos){box.innerHTML=vacio('Todavía no hay conexión con Firebase','Espera unos segundos y vuelve a intentarlo, para no pisar datos.');return}
   const plan=planImport(rows,S.casos,{hoy:TODAY,usuario:USER.nombre});
-  if(plan.error){$('#impRes').innerHTML=`<div class="empty"><b>El archivo no tiene el formato esperado</b>Faltan columnas: ${plan.error.join(', ')}. Descarga el “Reporte de Actividad – Cotizaciones” de Clear Mechanic.</div>`;return}
-  $('#impRes').innerHTML=`<div class="panel"><b id="impProg">Guardando en Firebase…</b></div>`;
-  try{await guardarImportacion(plan,archivo)}catch(e){$('#impRes').innerHTML=`<div class="empty"><b>No se pudo guardar la importación</b>${esc(e.code||e.message)}. Puedes volver a subir el mismo archivo: no duplica.</div>`;return}
+  if(plan.error){box.innerHTML=vacio('El archivo no tiene el formato esperado','Faltan columnas: '+plan.error.join(', ')+'. Descarga el “Reporte de Actividad – Cotizaciones” de Clear Mechanic.');return}
+  box.innerHTML=`<div class="panel"><b class="prog">Guardando cotizaciones en Firebase…</b></div>`;
+  try{await guardarImportacion(plan,archivo,box.querySelector('.prog'))}catch(e){box.innerHTML=vacio('No se pudo guardar la importación',esc(e.code||e.message)+'. Puedes volver a subir el mismo archivo: no duplica.');return}
   const s=plan.stats;
-  $('#impRes').innerHTML=`<div class="steps">
+  box.innerHTML=`<h2>Cotizaciones · ${esc(archivo)}</h2><div class="steps">
    <div class="step"><span class="num">${s.filas.toLocaleString('es-GT')}</span><b>filas leídas</b><span class="sm">${s.ordenes} órdenes · ${s.partidas} partidas con precio</span></div>
    <div class="step"><span class="num">${s.nuevos}</span><b>casos nuevos</b><span class="sm">Órdenes con partidas rechazadas o pendientes</span></div>
    <div class="step"><span class="num">${s.recuperados}</span><b>recuperados detectados</b><span class="sm">${Q(s.montoRecuperado)} que pasaron a “Aprobado”</span></div>
    <div class="step"><span class="num">${s.avisos}</span><b>avisos de calidad</b><span class="sm">Partidas aprobadas o rechazadas sin precio</span></div></div>
    <div class="panel" id="impCart"></div>`;
-  window.__impStats=s;
-  toast('Importación completa');
+  toast('Cotizaciones importadas');
   rehacerAgendaTrasImport();
 }
+async function importarEnlaces(rows,archivo,box){
+  if(!ready.casos||!ready.enl){box.innerHTML=vacio('Todavía no hay conexión con Firebase','Espera unos segundos y vuelve a intentarlo.');return}
+  const plan=planEnlaces(rows,S.enlaces);
+  if(plan.error){box.innerHTML=vacio('El archivo no tiene el formato esperado','Faltan columnas: '+plan.error.join(', ')+'. Descarga el “Reporte de Actividad – Formas de Inspección” de Clear Mechanic.');return}
+  const n=Object.keys(plan.cambios).length,st=plan.stats;
+  box.innerHTML=`<div class="panel"><b>Guardando enlaces en Firebase…</b></div>`;
+  try{await setDoc(doc(db,'crm_enlaces','zona10'),{...(n?{urls:plan.cambios}:{}),ultima:{fecha:TODAY,creada:iso(),archivo,filas:st.filas,usuario:USER.nombre}},{merge:true})}
+  catch(e){box.innerHTML=vacio('No se pudo guardar los enlaces',esc(e.code||e.message)+'. Puedes volver a subir el mismo archivo: no duplica.');return}
+  const urls={...S.enlaces,...plan.cambios},ab=Object.values(S.casos).filter(abierto),con=ab.filter(c=>urls[c.ot]).length,sin=ab.length-con;
+  box.innerHTML=`<h2>Enlaces de inspección · ${esc(archivo)}</h2><div class="steps" id="impEnl">
+   <div class="step"><span class="num">${st.filas.toLocaleString('es-GT')}</span><b>órdenes leídas</b><span class="sm">${st.invalidos?st.invalidos+' sin enlace válido':'todas con enlace'}</span></div>
+   <div class="step"><span class="num">${st.nuevos}</span><b>enlaces nuevos</b><span class="sm">Órdenes que antes no tenían enlace</span></div>
+   <div class="step"><span class="num">${st.actualizados}</span><b>enlaces actualizados</b><span class="sm">${st.iguales} ya estaban igual</span></div>
+   <div class="step"><span class="num">${sin}</span><b>casos abiertos sin enlace</b><span class="sm">${con} de ${ab.length} tienen enlace</span></div></div>
+   ${sin?`<div class="msg">${sin===1?'Hay 1 caso abierto sin enlace':'Hay '+sin+' casos abiertos sin enlace'}: son órdenes anteriores al rango de este reporte. Descarga “Formas de Inspección” con un rango más amplio y vuelve a subirlo.</div>`:''}`;
+  toast('Enlaces importados');
+}
 async function rehacerAgendaTrasImport(){ if(S.agenda[TODAY])await rehacerAgenda(); else ensureAgenda(); }
-function leerArchivo(file){
+/* Acepta uno o varios archivos y reconoce cada reporte por sus columnas */
+async function procesarArchivos(files){
+  if(!canAct()||!files.length)return;
   if(!window.XLSX){toast('No se pudo cargar el lector de Excel');return}
-  const fr=new FileReader();fr.onload=e=>{try{const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});const ws=wb.Sheets[wb.SheetNames[0]];importar(XLSX.utils.sheet_to_json(ws,{header:1,raw:true}),file.name)}catch(err){$('#impRes').innerHTML=`<div class="empty"><b>No se pudo leer el archivo</b>${esc(err.message)}</div>`}};fr.readAsArrayBuffer(file);
+  $('#impRes').innerHTML='';
+  for(const file of files){
+    const box=document.createElement('div');box.className='impBlock';$('#impRes').append(box);
+    try{
+      const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
+      const tipo=tipoReporte(rows);
+      if(tipo==='cotizaciones')await importarCotizaciones(rows,file.name,box);
+      else if(tipo==='enlaces')await importarEnlaces(rows,file.name,box);
+      else box.innerHTML=vacio('No reconozco el archivo “'+esc(file.name)+'”','Debe ser el “Reporte de Actividad – Cotizaciones” o el “Reporte de Actividad – Formas de Inspección” de Clear Mechanic.');
+    }catch(err){box.innerHTML=vacio('No se pudo leer “'+esc(file.name)+'”',esc(err.message))}
+  }
 }
 
 /* ================= RESPALDO ================= */
 async function descargarRespaldo(){
   if(!canAct()||!ready.casos)return;
   if(!window.XLSX){toast('No se pudo cargar el lector de Excel');return}
-  const H=filasRespaldo(S.casos),sm=semanaStats(),ms=mesStats(),base=S.cfg.base==='mo'?ms.mo:ms.monto;
+  const H=filasRespaldo(S.casos,S.enlaces),sm=semanaStats(),ms=mesStats(),base=S.cfg.base==='mo'?ms.mo:ms.monto;
   const ab=Object.values(S.casos).filter(abierto);
   const resumen=[['Respaldo CRM Lube N Save Zona 10'],['Generado',TODAY+' por '+USER.nombre],[],
     ['Casos en total',Object.keys(S.casos).length],['Casos abiertos',ab.length],['Cartera dormida Q',r2(ab.reduce((a,c)=>a+montoCaso(c),0))],
@@ -451,7 +501,7 @@ async function descargarRespaldo(){
   const wb=XLSX.utils.book_new();
   const add=(n,ws,w)=>{ws['!cols']=w.map(x=>({wch:x}));XLSX.utils.book_append_sheet(wb,ws,n)};
   add('Resumen',XLSX.utils.aoa_to_sheet(resumen),[30,46]);
-  add('Cartera',XLSX.utils.json_to_sheet(H.Cartera),[8,26,12,24,10,9,14,7,12,15,15,24,12,14,9,9,9,14,24]);
+  add('Cartera',XLSX.utils.json_to_sheet(H.Cartera),[8,26,12,24,10,36,9,14,7,12,15,15,24,12,14,9,9,9,14,24]);
   add('Partidas',XLSX.utils.json_to_sheet(H.Partidas),[8,26,46,20,11,10,10,12]);
   add('Bitácora',XLSX.utils.json_to_sheet(H['Bitácora']),[12,8,26,16,34,40,12]);
   add('Recuperos',XLSX.utils.json_to_sheet(H.Recuperos),[12,8,26,12,10,16,12]);
@@ -507,8 +557,8 @@ function cardHoy(c){
    <div class="row"><div><span class="nm">${esc(c.cliente)}</span> <span class="sm">${esc(c.vehiculo)} · ${esc(c.placa)}${c.km?' · '+(+c.km).toLocaleString('es-GT')+' km':''} · OT ${esc(c.ot)}</span></div><span class="money">${Q(montoCaso(c))}</span></div>
    <div class="chips">${chipsCaso(c)}</div>
    <div class="sm">${topItems(c,5).map(p=>esc(p.punto)+' '+Q(p.total)).join(' · ')}</div>
-   ${r?`<div class="msg"><b>Registrado hoy:</b> ${esc(r)}</div><div class="acts"><button class="btn" data-ver="${c.ot}">Ver caso</button></div>`:`<div class="msg">${esc(mensaje(c))}</div>
-   <div class="acts">${A?`${w?`<a class="btn k1" href="${w}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-copy="${c.ot}">Copiar</button><button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button>`:''}<button class="btn" data-ver="${c.ot}">Ver caso</button></div>`}
+   ${r?`<div class="msg"><b>Registrado hoy:</b> ${esc(r)}</div><div class="acts">${verRep(c)}<button class="btn" data-ver="${c.ot}">Ver caso</button></div>`:`<div class="msg">${esc(mensaje(c))}</div>
+   <div class="acts">${A?`${w?`<a class="btn k1" href="${w}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-copy="${c.ot}">Copiar</button><button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button>`:''}${verRep(c)}<button class="btn" data-ver="${c.ot}">Ver caso</button></div>`}
   </div></article>`;
 }
 function renderHoy(){
@@ -561,7 +611,7 @@ function renderCaso(){
    <h2>Seguimientos</h2><div class="chips">${STAGES.map(s=>`<span class="chip ${c.seg[s.k]?'g':dias(c)>=s.d&&abierto(c)?'r':''}">${s.l}${c.seg[s.k]?' ✓':''}</span>`).join('')}</div>
    <h2>Mensaje sugerido</h2><div class="msg">${esc(mensaje(c))}</div>
    ${abierto(c)?(A?`<div class="acts">${wa(c)?`<a class="btn k1" href="${wa(c)}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="negocia" data-ot="${c.ot}">En negociación</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button></div>`:''):`<p class="sm">Caso cerrado: <b>${esc(c.estado)}</b>${c.motivo?' · '+esc(c.motivo):''}</p>`}
-   <h2>Enlaces</h2><div class="acts"><a class="btn" href="https://lubensavezona10.clearmechanic.com/dashboard/orders" target="_blank" rel="noopener">Clear Mechanic</a>${abierto(c)&&A?`<button class="btn" data-a="taller" data-ot="${c.ot}">Marcar en taller</button>`:''}</div>
+   <h2>Enlaces</h2>${enlaceDe(c)?'':'<p class="note">Este caso no tiene enlace de inspección: carga el reporte “Formas de Inspección” en Importar.</p>'}<div class="acts">${verRep(c,'Ver reporte con fotos y videos','btn k1')}<a class="btn" href="https://lubensavezona10.clearmechanic.com/dashboard/orders" target="_blank" rel="noopener">Clear Mechanic</a>${abierto(c)&&A?`<button class="btn" data-a="taller" data-ot="${c.ot}">Marcar en taller</button>`:''}</div>
   </div></div>`;
 }
 function weekStart(d){const [y,m,dd]=d.split('-').map(Number);const dt=new Date(y,m-1,dd);const w=(dt.getDay()+6)%7;dt.setDate(dt.getDate()-w);return ymd(dt)}
@@ -616,7 +666,8 @@ function renderSemana(){
 }
 function renderImportar(){
   const u=S.imports[0];const box=$('#impUlt');if(!box)return;
-  box.innerHTML=u?`Última carga: <b>${fmtD(u.fecha)}</b> · ${esc(u.archivo||'')} · ${u.nuevos} nuevos, ${u.recuperados} recuperados detectados · por ${esc(u.usuario||'—')}`:'Todavía no se ha cargado ningún reporte.';
+  const e=S.enlUlt;
+  box.innerHTML=(u?`Última carga de cotizaciones: <b>${fmtD(u.fecha)}</b> · ${esc(u.archivo||'')} · ${u.nuevos} nuevos, ${u.recuperados} recuperados detectados · por ${esc(u.usuario||'—')}`:'Todavía no se ha cargado ningún reporte de cotizaciones.')+'<br>'+(e?`Última carga de enlaces: <b>${fmtD(e.fecha)}</b> · ${esc(e.archivo||'')} · por ${esc(e.usuario||'—')}`:'Todavía no se han cargado los enlaces (Formas de Inspección).');
   const c=$('#impCart');if(c){const ab=Object.values(S.casos).filter(abierto);c.innerHTML=`<b>Cartera abierta: ${ab.length} casos · <span id="kCart">${Q(ab.reduce((a,x)=>a+montoCaso(x),0))}</span></b><div class="acts"><button class="btn k1" data-go="hoy">Ver la agenda de hoy</button><button class="btn" data-go="cartera">Ver cartera</button></div>`}
 }
 function render(){if(!USER)return;({hoy:renderHoy,cartera:renderCartera,caso:renderCaso,semana:renderSemana,importar:renderImportar})[tab]()}
@@ -647,9 +698,9 @@ document.addEventListener('change',e=>{if(e.target.id==='fEst'){fEst=e.target.va
 document.addEventListener('input',e=>{if(e.target.id==='fBus'){fBus=e.target.value;const p=e.target.selectionStart;renderCartera();const i=$('#fBus');i.focus();i.setSelectionRange(p,p)}});
 $('#ov').addEventListener('click',e=>{if(e.target.id==='ov')closeDlg()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDlg()});
-$('#file').addEventListener('change',e=>{const f=e.target.files[0];if(f)leerArchivo(f);e.target.value=''});
+$('#file').addEventListener('change',e=>{procesarArchivos([...e.target.files]);e.target.value=''});
 const dr=$('#drop');['dragenter','dragover'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.add('over')}));['dragleave','drop'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.remove('over')}));
-dr.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f&&canAct())leerArchivo(f)});
+dr.addEventListener('drop',e=>{if(canAct())procesarArchivos([...e.dataTransfer.files])});
 window.addEventListener('online',()=>{const b=$('#ban');b.className='ban';b.textContent=BAN_OK});
 window.addEventListener('offline',()=>{const b=$('#ban');b.className='ban err';b.textContent='Sin conexión: los cambios no se guardan hasta que vuelva el internet. No cierres esta pestaña.'});
 setInterval(()=>{const h=gtToday();if(h!==TODAY){TODAY=h;ensureAgenda();scheduleRender()}},60000);

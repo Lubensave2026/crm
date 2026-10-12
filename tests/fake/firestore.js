@@ -18,7 +18,7 @@ function snapOf(L){
   if(L.type==='query'){const o=L.m.find(x=>x.o)?.o,lim=L.m.find(x=>x.l)?.l;if(o)ids.sort((a,b)=>String(T[b][o[0]]).localeCompare(String(T[a][o[0]])));if(lim)ids=ids.slice(0,lim)}
   return ids;}
 function notify(){try{sessionStorage.setItem('__fakeDB',JSON.stringify(G.__DB))}catch(e){}for(const L of G.__L){
-  if(L.type==='doc'){const d=tbl(L.c)[L.id];const j=JSON.stringify(d);if(j!==L.last){L.last=j;L.cb({exists:()=>!!d,data:()=>structuredClone(d),metadata:{fromCache:false}})}}
+  if(L.type==='doc'){const d=tbl(L.c)[L.id];const j=JSON.stringify(d);if(!L.sent||j!==L.last){L.sent=true;L.last=j;L.cb({exists:()=>!!d,data:()=>structuredClone(d),metadata:{fromCache:false}})}}
   else{const T=tbl(L.c),ids=snapOf(L),cur={};ids.forEach(i=>cur[i]=JSON.stringify(T[i]));const ch=[];
     for(const i of ids)if(cur[i]!==L.prev[i])ch.push({type:L.prev[i]===undefined?'added':'modified',doc:{id:i,data:()=>structuredClone(T[i])}});
     for(const i in L.prev)if(cur[i]===undefined)ch.push({type:'removed',doc:{id:i,data:()=>({})}});

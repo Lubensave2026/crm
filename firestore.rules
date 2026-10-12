@@ -19,6 +19,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Enlaces de inspección (Formas de Inspección): un documento con el mapa OT -> enlace.
+    match /crm_enlaces/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
     // Historial de importaciones: solo se agrega.
     match /crm_importaciones/{id} {
       allow read: if request.auth != null;

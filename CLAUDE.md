@@ -27,4 +27,5 @@ CRM independiente (separado de los demás proyectos del usuario). Se publica en 
 - Datos de prueba reales en producción: Ricardo ya registró contactos de prueba (OT 5381 parcial Q22,699, etc.).
 - Datos de prueba borrados y reimportados (2026-10-09); producción limpia.
 - Usuarios: cambio de PIN propio, y el jefe agrega/restablece/desactiva usuarios desde Ajustes. Plan a futuro: copias independientes por sede (Carretera al Salvador, Aguilar Batres) con el mismo código y bloque de configuración; cada sede usa su propio Clear Mechanic y no tiene TallerFLOW; metas e incentivos los define cada encargado con Jacobo.
+- Enlaces de inspección (2026-10-12): carga de "Formas de Inspección" (columna Orden digital) → `crm_enlaces/zona10`; botón "Ver reporte" y enlace en el mensaje de WhatsApp. La carga semanal incluye ambos reportes. Pendiente del usuario: bajar Formas de Inspección con rango más amplio para cubrir OT < 5212 (casos 5211 y 5209).
 - Fase 2 hecha: respaldo en Excel (Semana → Respaldo, jefe/asesor, aviso a los 7 días al jefe) y plurales corregidos. Pendiente: ajustes de uso que pida Byron tras probar con Ricardo.

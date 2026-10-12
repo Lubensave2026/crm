@@ -7,7 +7,7 @@ Un solo archivo (`index.html`), Firebase (Firestore + Auth anónima) y GitHub Pa
 - **Datos:** Firestore, proyecto `crm-lube-n-save` (independiente de otros proyectos). Colecciones `crm_casos`, `crm_agenda`, `crm_config`, `crm_importaciones`, `crm_usuarios`. No se guarda ningún dato en localStorage (solo la pestaña activa y el último usuario).
 - **Escrituras:** por documento (`updateDoc`, `arrayUnion` para bitácora y recuperos). La importación usa `writeBatch` en lotes de 450 operaciones. La agenda del día se crea con una transacción.
 - **Acceso:** PIN de 6 dígitos por usuario. Roles: `jefe` (todo), `asesor` (todo menos Ajustes), `consulta` (solo lectura).
-- **Importación:** solo filas `Cotización - Total`; clave OT + punto de inspección; reimportar no duplica.
+- **Importación:** una sola zona de carga que reconoce el reporte por sus columnas. *Cotizaciones*: solo filas `Cotización - Total`; clave OT + punto de inspección; reimportar no duplica. *Formas de Inspección*: columna `Orden digital` = enlace (vehi.mobi) de fotos y videos por OT; se guarda en `crm_enlaces/zona10` (mapa OT → enlace, solo https) y aparece en el caso, en las tarjetas de Hoy y dentro del mensaje de WhatsApp. Se puede cargar antes o después de las cotizaciones. Si el reporte no cubre OT viejas, se avisa cuántos casos abiertos quedan sin enlace.
 - **TallerFLOW:** sin relación. El CRM no tiene enlaces ni acceso a TallerFLOW.
 - **PIN y usuarios:** cada usuario cambia su PIN con "Cambiar PIN" (arriba). El jefe, en Semana → Ajustes → Usuarios y accesos, agrega usuarios, restablece PIN y desactiva accesos (no se borran; `activo:false`).
 
