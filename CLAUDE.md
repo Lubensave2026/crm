@@ -14,6 +14,7 @@ CRM independiente (separado de los demás proyectos del usuario). Se publica en 
 - Idioma de comunicación con el usuario: español.
 - Al ser sitio estático en GitHub Pages, no hay backend propio: la lógica va en el cliente + reglas de seguridad de Firebase (Firestore Rules obligatorias, nunca dejar modo abierto).
 - La config web de Firebase (apiKey, etc.) es pública por diseño; la seguridad depende de las Rules y Auth.
+- **Manual y novedades:** el manual de usuario vive dentro de `index.html` (constantes `MAN` y `NOVEDADES`, pestaña "Manual de usuario"). Cada cambio visible para los usuarios debe: (1) actualizar la sección del manual afectada y (2) agregar una entrada ARRIBA en `NOVEDADES` con id ascendente (p. ej. `2026-10-20a`), para que a cada usuario le salga el aviso amarillo. `referencia/Manual_Asesor_CRM_LNS.docx` quedó obsoleto (no actualizarlo).
 - Confirmar con el usuario antes de acciones externas/irreversibles (push, deploy, reglas en producción, borrado de datos).
 
 ## Estructura
@@ -28,4 +29,5 @@ CRM independiente (separado de los demás proyectos del usuario). Se publica en 
 - Datos de prueba borrados y reimportados (2026-10-09); producción limpia.
 - Usuarios: cambio de PIN propio, y el jefe agrega/restablece/desactiva usuarios desde Ajustes. Plan a futuro: copias independientes por sede (Carretera al Salvador, Aguilar Batres) con el mismo código y bloque de configuración; cada sede usa su propio Clear Mechanic y no tiene TallerFLOW; metas e incentivos los define cada encargado con Jacobo.
 - Enlaces de inspección (2026-10-12): carga de "Formas de Inspección" (columna Orden digital) → `crm_enlaces/zona10`; botón "Ver reporte" y enlace en el mensaje de WhatsApp. La carga semanal incluye ambos reportes. Pendiente del usuario: bajar Formas de Inspección con rango más amplio para cubrir OT < 5212 (casos 5211 y 5209).
+- Manual de usuario en la app + avisos de novedades por usuario (2026-10-12; lo visto se guarda en localStorage por usuario y dispositivo).
 - Fase 2 hecha: respaldo en Excel (Semana → Respaldo, jefe/asesor, aviso a los 7 días al jefe) y plurales corregidos. Pendiente: ajustes de uso que pida Byron tras probar con Ricardo.

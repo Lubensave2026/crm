@@ -29,6 +29,17 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   const {ctx,page,errs}=await abrir(vp);
   await page.screenshot({path:path.join(out,`00-login-${tag}.png`)});
   await login(page,'Ricardo','222222');
+  if(tag==='desktop'){
+    ok('aviso de novedades visible al entrar',await page.isVisible('#nov')&&/Manual de usuario dentro/.test(await page.textContent('#nov')));
+    ok('punto de novedad en la pestaña Manual',await page.isVisible('#manDot'));
+    await page.click('#nov [data-go="manual"]');await page.waitForTimeout(200);
+    ok('manual: muestra Novedades marcadas como nuevas',/NUEVO/.test(await page.textContent('#manual')));
+    ok('manual: asesor ve la rutina diaria y la carga',/Tu rutina diaria/.test(await page.textContent('#manual'))&&/Formas de Inspección/.test(await page.textContent('#manual')));
+    ok('manual: asesor no ve la sección del jefe',!/Solo jefe de taller/.test(await page.textContent('#manual')));
+    ok('al abrir el manual desaparece el aviso y el punto',!(await page.isVisible('#nov'))&&!(await page.isVisible('#manDot')));
+    await page.screenshot({path:path.join(out,'7-manual-desktop.png'),fullPage:true});
+    await page.click('button[data-sec="m-carga"]');await page.waitForTimeout(500);
+  }
   await page.click('nav button[data-t="importar"]');
   await page.setInputFiles('#file',[xlsx,formas]);
   await page.waitForSelector('#kCart',{timeout:60000});await page.waitForSelector('#impEnl',{timeout:60000});
@@ -105,11 +116,14 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
 {
   const a=await abrir({width:1280,height:900});await login(a.page,'Mario','333333');
   await a.page.click('nav button[data-t="semana"]');ok('consulta: sin botón de respaldo',!(await a.page.$('#bkp')));
+  await a.page.click('nav button[data-t="manual"]');await a.page.waitForTimeout(200);
+  ok('manual: consulta ve su nota y no ve la rutina de asesor',/Tu usuario es de consulta/.test(await a.page.textContent('#manual'))&&!/Tu rutina diaria/.test(await a.page.textContent('#manual')));
   ok('consulta: sin pestaña Importar',await a.page.isHidden('nav button[data-t="importar"]'));
   await a.page.click('nav button[data-t="semana"]');ok('consulta: sin Ajustes',!(await a.page.$('#cSave')));
   await a.ctx.close();
   // Cambiar PIN propio (Ricardo)
   const r=await abrir({width:1280,height:900});await login(r.page,'Ricardo','222222');
+  await r.page.click('#novX');ok('Entendido oculta el aviso',!(await r.page.isVisible('#nov')));
   await r.page.click('#cpin');await r.page.fill('#pA','999999');await r.page.fill('#pN1','654321');await r.page.fill('#pN2','654321');await r.page.click('#dOk');await r.page.waitForTimeout(300);
   ok('cambiar PIN: rechaza PIN actual incorrecto',/actual no es correcto/.test(await r.page.textContent('#toast')));
   await r.page.fill('#pA','222222');await r.page.fill('#pN2','000000');await r.page.click('#dOk');await r.page.waitForTimeout(300);
@@ -119,9 +133,13 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await r.page.click('#salir');await r.page.waitForSelector('#lu');
   await r.page.click('#lu button:has-text("Ricardo")');await r.page.fill('#lpin','222222');await r.page.click('#lgo');ok('PIN viejo ya no entra',/incorrecto/i.test(await r.page.textContent('#lerr')));
   await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});ok('PIN nuevo entra',true);
+  ok('el aviso no vuelve a salir si ya lo vio',!(await r.page.isVisible('#nov')));
+  await r.page.evaluate(()=>localStorage.setItem('lns_crm_visto_ricardo','2026-10-09c'));await r.page.click('#salir');await r.page.waitForSelector('#lu');await r.page.click('#lu button:has-text("Ricardo")');await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});
+  ok('con una novedad nueva vuelve el aviso (+1 más)',/Manual de usuario dentro/.test(await r.page.textContent('#nov'))&&/\+1 más/.test(await r.page.textContent('#nov')));
   await r.ctx.close();
   const b=await abrir({width:1280,height:900});await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
   ok('jefe: ve Ajustes',!!(await b.page.$('#cSave')));
+  await b.page.click('nav button[data-t="manual"]');await b.page.waitForTimeout(200);ok('manual: jefe ve la sección de jefe',/Solo jefe de taller/.test(await b.page.textContent('#manual')));await b.page.click('nav button[data-t="semana"]');
   await b.page.click('nav button[data-t="importar"]');await b.page.setInputFiles('#file',xlsx);await b.page.waitForSelector('#kCart',{timeout:60000});await b.page.waitForTimeout(600);
   await b.page.click('nav button[data-t="hoy"]');await b.page.waitForTimeout(300);ok('jefe: aviso de respaldo en Hoy cuando no hay',/respaldo/i.test(await b.page.textContent('#hoy')));
   await b.page.click('nav button[data-t="semana"]');

@@ -11,6 +11,9 @@ Un solo archivo (`index.html`), Firebase (Firestore + Auth anónima) y GitHub Pa
 - **TallerFLOW:** sin relación. El CRM no tiene enlaces ni acceso a TallerFLOW.
 - **PIN y usuarios:** cada usuario cambia su PIN con "Cambiar PIN" (arriba). El jefe, en Semana → Ajustes → Usuarios y accesos, agrega usuarios, restablece PIN y desactiva accesos (no se borran; `activo:false`).
 
+## Manual de usuario y novedades
+La pestaña **Manual de usuario** muestra el manual según el rol (consulta, asesor, jefe) y una lista de **Novedades**. Cada usuario ve un aviso amarillo (y un punto en la pestaña) mientras tenga novedades sin ver; se marca como visto al abrir el manual o con "Entendido" (se guarda en el navegador, por usuario). Para publicar una novedad: actualizar `MAN` y agregar una entrada arriba en `NOVEDADES` en `index.html`.
+
 ## Respaldo semanal
 En **Semana → Respaldo** (jefe y asesor) se descarga `CRM_LNS_Respaldo_AAAA-MM-DD.xlsx` con las hojas Resumen, Cartera, Partidas, Bitácora y Recuperos (incluye casos cerrados). La fecha del último respaldo se guarda en `crm_config/zona10.ultimoRespaldo`; si pasan más de 7 días, el jefe ve un aviso en "Hoy". El archivo trae datos de clientes: guardarlo fuera del repositorio (los `.xlsx` están en `.gitignore`). No hay restauración desde el Excel; si se perdiera la base, la cartera se reconstruye importando de Clear Mechanic, pero se perdería la bitácora.
 

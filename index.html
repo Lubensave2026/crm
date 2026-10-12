@@ -115,9 +115,11 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
     <button role="tab" aria-selected="false" data-t="caso">Caso</button>
     <button role="tab" aria-selected="false" data-t="importar">Importar Clear Mechanic</button>
     <button role="tab" aria-selected="false" data-t="semana">Semana</button>
+    <button role="tab" aria-selected="false" data-t="manual">Manual de usuario<i class="dot" id="manDot" hidden></i></button>
   </nav>
 </div></div>
 <div class="ban" id="ban">Conectando con Firebase…</div>
+<div class="ban nov" id="nov" hidden></div>
 
 <main>
 <section class="scr" id="hoy"></section>
@@ -139,6 +141,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
   </div>
 </section>
 <section class="scr" id="semana" hidden></section>
+<section class="scr" id="manual" hidden></section>
 </main>
 
 <div class="ov" id="ov" hidden><div class="dlg" id="dlg"></div></div>
@@ -156,6 +159,15 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
 .login .err{color:var(--red);font-size:13px;min-height:18px}
 .ban.err{background:var(--red-bg);color:var(--red)}
 .who{display:flex;gap:8px;align-items:center}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#FFE500;margin-left:7px;vertical-align:middle}
+.ban.nov{background:var(--yellow);color:#141414;font-weight:600}
+.ban.nov .btn{margin-left:6px;padding:3px 10px}
+.man h2{margin-top:2px}.man p,.man li{max-width:78ch}.man ul,.man ol{margin:4px 0 4px 18px;padding:0}.man li{margin:3px 0}
+.man .toc{display:flex;flex-wrap:wrap;gap:6px}
+.nvd{border-left:4px solid var(--line);padding:6px 12px;margin:6px 0;background:var(--bg)}
+.nvd.nuevo{border-left-color:var(--yellow);background:var(--yellow-soft)}
+.nvd b{display:block}.nvd .f{font-size:12px;color:var(--muted)}
+@media print{.top,.ban,#nov,.toast,.login,.ov,#manPrint,.man .toc{display:none!important}section.scr:not(#manual){display:none!important}body{background:#fff}.panel{border:0;padding:6px 0}}
 .who button{background:transparent;border:1px solid #555;color:#ddd;font:600 12px var(--body);padding:2px 8px;cursor:pointer}
 </style>
 <div class="login" id="login"><div class="box">
@@ -670,20 +682,70 @@ function renderImportar(){
   box.innerHTML=(u?`Última carga de cotizaciones: <b>${fmtD(u.fecha)}</b> · ${esc(u.archivo||'')} · ${u.nuevos} nuevos, ${u.recuperados} recuperados detectados · por ${esc(u.usuario||'—')}`:'Todavía no se ha cargado ningún reporte de cotizaciones.')+'<br>'+(e?`Última carga de enlaces: <b>${fmtD(e.fecha)}</b> · ${esc(e.archivo||'')} · por ${esc(e.usuario||'—')}`:'Todavía no se han cargado los enlaces (Formas de Inspección).');
   const c=$('#impCart');if(c){const ab=Object.values(S.casos).filter(abierto);c.innerHTML=`<b>Cartera abierta: ${ab.length} casos · <span id="kCart">${Q(ab.reduce((a,x)=>a+montoCaso(x),0))}</span></b><div class="acts"><button class="btn k1" data-go="hoy">Ver la agenda de hoy</button><button class="btn" data-go="cartera">Ver cartera</button></div>`}
 }
-function render(){if(!USER)return;({hoy:renderHoy,cartera:renderCartera,caso:renderCaso,semana:renderSemana,importar:renderImportar})[tab]()}
+function render(){if(!USER)return;({hoy:renderHoy,cartera:renderCartera,caso:renderCaso,semana:renderSemana,importar:renderImportar,manual:renderManual})[tab]()}
 let rq=0;function scheduleRender(){if(rq)return;rq=requestAnimationFrame(()=>{rq=0;const a=document.activeElement;if(a&&a.closest&&a.closest('#semana')&&/INPUT|SELECT/.test(a.tagName))return;render()})}
-function go(t){if(t==='importar'&&!canAct())t='hoy';tab=t;pref('tab',t==='caso'?'cartera':t);document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.t===t)));document.querySelectorAll('section.scr').forEach(s=>s.hidden=s.id!==t);render();window.scrollTo(0,0)}
+function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manual')manNuevas=new Set(noVistas().map(n=>n.id));tab=t;if(t!=='manual')pref('tab',t==='caso'?'cartera':t);document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.t===t)));document.querySelectorAll('section.scr').forEach(s=>s.hidden=s.id!==t);render();if(t==='manual')marcarVisto();else actualizarAviso();window.scrollTo(0,0)}
+
+
+/* ================= MANUAL DE USUARIO Y NOVEDADES =================
+   Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
+   (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
+const NOVEDADES=[
+ {id:'2026-10-12b',fecha:'2026-10-12',titulo:'Manual de usuario dentro de la herramienta',texto:'Esta pestaña tiene el manual siempre actualizado. Cada vez que haya un cambio aparecerá un aviso amarillo y aquí lo verás explicado en “Novedades”.',sec:'m-que'},
+ {id:'2026-10-12a',fecha:'2026-10-12',titulo:'Enlace al reporte de fotos y videos',texto:'Cada caso tiene el botón “Ver reporte con fotos y videos” y el mensaje de WhatsApp ya incluye el enlace para el cliente. Para que funcione, la carga semanal incluye ahora los dos reportes de Clear Mechanic: Cotizaciones y Formas de Inspección.',sec:'m-carga'},
+ {id:'2026-10-09c',fecha:'2026-10-09',titulo:'Cambiar tu PIN',texto:'Arriba a la derecha hay un botón “Cambiar PIN”. Cámbialo la primera vez que entres.',sec:'m-entrar'},
+ {id:'2026-10-09b',fecha:'2026-10-09',titulo:'Respaldo semanal en Excel',texto:'En Semana → Respaldo se descarga un Excel con la cartera, la bitácora y lo recuperado. Hazlo cada sábado.',sec:'m-semana'},
+ {id:'2026-10-09a',fecha:'2026-10-09',titulo:'Autorizó: Total o Parcial se ajusta solo',texto:'Si el cliente autoriza menos de lo pendiente, el sistema lo registra como Parcial y el resto sigue en la cartera.',sec:'m-autoriza'}
+];
+const MAN=[
+ {id:'m-que',r:0,t:'Para qué sirve',h:`<p>Todo lo que el cliente no autorizó en Clear Mechanic queda en una lista. El sistema te dice cada día a quién contactar (entre 2 y 5 casos), te arma el mensaje de WhatsApp con el enlace a las fotos y videos de la inspección, y guarda lo que pasó. Lo que se recupera se suma al reporte del sábado y al incentivo del asesor.</p>`},
+ {id:'m-consulta',r:-1,t:'Tu usuario es de consulta',h:`<p>Con tu usuario puedes ver la agenda, la cartera, cada caso y el reporte de la semana, pero no registrar contactos ni cargar archivos. Cualquier cambio lo hace el asesor o el jefe de taller.</p>`},
+ {id:'m-entrar',r:0,t:'Entrar, salir y cambiar tu PIN',h:`<ul><li>Abre la dirección de la herramienta, toca tu <b>nombre</b> y escribe tu <b>PIN de 6 dígitos</b>.</li><li>Tu PIN es personal: no lo compartas. <b>Cámbialo la primera vez</b> con el botón <b>Cambiar PIN</b> (arriba a la derecha): PIN actual, PIN nuevo y repetirlo.</li><li>Si lo olvidas, el jefe de taller te lo restablece.</li><li>Al terminar toca <b>Salir</b>, sobre todo en computadoras compartidas.</li></ul>`},
+ {id:'m-hoy',r:1,t:'Tu rutina diaria: pantalla “Hoy”',h:`<p>Al empezar el día abre <b>Hoy</b>. Verás de 2 a 5 tarjetas; el color de la izquierda es la urgencia (rojo = crítico, amarillo = preventivo). Para cada una:</p><ol><li>Lee el mensaje sugerido y toca <b>Abrir WhatsApp</b>: se abre el chat con el mensaje ya escrito <b>y el enlace al reporte de fotos y videos</b>. Revísalo y envíalo desde WhatsApp.</li><li>Si quieres ver las fotos y lo cotizado, toca <b>Ver reporte</b> (es el mismo enlace que verá el cliente).</li><li>Apenas el cliente responda (o no), <b>registra el resultado</b>. Una tarjeta sin registrar es un cliente que el sistema cree que no has contactado.</li></ol><p><b>Meta: todas las tarjetas registradas antes de las 12:00.</b></p>
+  <div class="tw"><table><thead><tr><th>Botón</th><th>Cuándo usarlo</th><th>Qué pasa</th></tr></thead><tbody>
+  <tr><td>Autorizó</td><td>El cliente aceptó hacer el trabajo</td><td>Registra el monto recuperado (ver más abajo)</td></tr>
+  <tr><td>Reprogramar</td><td>Pide que lo busques después</td><td>Eliges la fecha; el caso vuelve a “Hoy” ese día</td></tr>
+  <tr><td>Sin respuesta</td><td>No contestó</td><td>Se reintenta en 3 días</td></tr>
+  <tr><td>Perdido</td><td>Ya no lo va a hacer</td><td>Debes elegir el motivo (obligatorio) y el caso se cierra</td></tr>
+  <tr><td>Copiar</td><td>Quieres pegar el mensaje en otro lado</td><td>Copia el texto sugerido</td></tr></tbody></table></div>`},
+ {id:'m-autoriza',r:1,t:'Cuando el cliente autoriza',h:`<ul><li>Toca <b>Autorizó</b>. El monto viene con lo pendiente: <b>cámbialo por lo que realmente autorizó el cliente</b> (y la mano de obra de esa parte).</li><li>Si autorizó <b>todo</b> lo pendiente queda como <b>Total</b> y el caso se cierra como Recuperado.</li><li>Si autorizó <b>solo una parte</b>, el sistema lo registra como <b>Parcial</b> al bajar el monto: descuenta lo autorizado y <b>el resto sigue en la cartera</b> para seguir insistiendo.</li><li>Si el carro ya entró al taller, abre el caso y toca <b>Marcar en taller</b> para no volver a contactar al cliente.</li></ul>`},
+ {id:'m-cartera',r:0,t:'Cartera y Caso',h:`<ul><li><b>Cartera:</b> todos los casos. Filtra por estado o busca por OT, cliente o placa. Toca una fila para abrir el caso.</li><li><b>Caso:</b> partidas pendientes, bitácora de contactos (quién, cuándo, qué pasó), el botón <b>Ver reporte con fotos y videos</b> y el enlace a Clear Mechanic.</li><li>Si un caso no tiene enlace de inspección, se avisa: falta cargar el reporte “Formas de Inspección”.</li></ul>`},
+ {id:'m-semana',r:0,t:'Semana y respaldo',h:`<ul><li><b>Semana:</b> el reporte del sábado: casos asignados, contactos, autorizados, lo recuperado y el incentivo del mes. Se llena solo con lo que se registra en “Hoy”.</li><li><b>Respaldo</b> (asesor y jefe): en Semana → Respaldo, “Descargar respaldo (Excel)”. Hazlo cada sábado y guárdalo solo en tu computadora; trae datos de clientes y no debe enviarse por WhatsApp ni subirse a internet.</li></ul>`},
+ {id:'m-carga',r:1,t:'Cada lunes: carga de Clear Mechanic',h:`<p>La carga normalmente la hace el <b>jefe de taller</b>, pero el asesor también puede. Son <b>dos reportes</b> de Clear Mechanic, de los <b>últimos 30 días</b>:</p><ol><li>“Reporte de Actividad – <b>Cotizaciones</b>”</li><li>“Reporte de Actividad – <b>Formas de Inspección</b>” (trae el enlace de fotos y videos de cada orden)</li></ol><ul><li>En <b>Importar Clear Mechanic</b> arrastra los dos archivos juntos (o uno por uno, en cualquier orden): el sistema reconoce cuál es cuál.</li><li>Crea los casos nuevos, detecta a los clientes que ya aprobaron y asigna a cada caso su enlace. No duplica nada ni borra lo que ya se registró.</li><li>Si en “Hoy” aparece “Última carga de Clear Mechanic hace X días”, hay que cargar los reportes.</li></ul>`},
+ {id:'m-jefe',r:2,t:'Solo jefe de taller: ajustes y usuarios',h:`<ul><li><b>Semana → Ajustes:</b> casos por día, meta mensual y porcentajes del incentivo. Después de cambiar los casos por día usa “Rehacer agenda” en Hoy para aplicarlo.</li><li><b>Usuarios y accesos</b> (Semana → Ajustes): agregar usuarios con su rol (consulta, asesor o jefe), restablecer el PIN de alguien y desactivar un acceso. Los usuarios no se borran, solo se desactivan.</li><li>Si pasan más de 7 días sin respaldo, en “Hoy” te sale un aviso.</li></ul>`},
+ {id:'m-reglas',r:0,t:'Reglas de oro',h:`<ul><li>Registra <b>cada</b> contacto el mismo día: la bitácora es la prueba del trabajo.</li><li>Nada se cierra sin motivo: “Perdido” siempre lleva razón.</li><li>No compartas tu PIN y toca <b>Salir</b> al terminar.</li><li>Si algo se ve raro o no carga: recarga la página (Ctrl + F5 en computadora). Si sigue igual, avisa al jefe de taller con una captura.</li></ul>`}
+];
+let manNuevas=new Set();
+const visto=()=>pref('visto_'+USER.id)||'';
+const noVistas=()=>NOVEDADES.filter(n=>n.id>visto());
+function marcarVisto(){pref('visto_'+USER.id,NOVEDADES[0].id);actualizarAviso()}
+function actualizarAviso(){
+  if(!USER)return;
+  const nv=noVistas(),b=$('#nov');$('#manDot').hidden=!nv.length||tab==='manual';
+  if(!nv.length||tab==='manual'){b.hidden=true;return}
+  b.innerHTML=`Novedad${nv.length>1?'es':''}: ${esc(nv[0].titulo)}${nv.length>1?' (+'+(nv.length-1)+' más)':''} <button class="btn" data-go="manual">Ver en el manual</button><button class="btn" id="novX">Entendido</button>`;b.hidden=false;
+}
+function renderManual(){
+  const secs=MAN.filter(m=>m.r===0||(m.r===1&&canAct())||(m.r===2&&isJefe())||(m.r===-1&&!canAct()));
+  $('#manual').innerHTML=`<div class="row"><div><h1>Manual de usuario</h1><p class="lead">Cómo usar la herramienta, según tu usuario (${esc(USER.rol)}). Se actualiza con cada cambio.</p></div><button class="btn" id="manPrint">Imprimir / guardar PDF</button></div>
+   <div class="toc"><button class="btn" data-sec="m-nov">Novedades</button>${secs.map(m=>`<button class="btn" data-sec="${m.id}">${esc(m.t.replace(/^Solo jefe de taller: /,''))}</button>`).join('')}</div>
+   <div class="panel man" id="m-nov"><h2>Novedades</h2>${NOVEDADES.map(n=>`<div class="nvd${manNuevas.has(n.id)?' nuevo':''}"><span class="f">${fmtD(n.fecha)}${manNuevas.has(n.id)?' · NUEVO':''}</span><b>${esc(n.titulo)}</b>${esc(n.texto)} ${secs.some(m=>m.id===n.sec)?`<button class="btn" data-sec="${n.sec}">Ver sección</button>`:''}</div>`).join('')}</div>
+   ${secs.map(m=>`<div class="panel man" id="${m.id}"><h2>${esc(m.t)}</h2>${m.h}</div>`).join('')}`;
+}
 
 /* ================= EVENTOS ================= */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact]');if(!t)return;
+  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec]');if(!t)return;
   if(t.id==='salir'){sess('user',null);location.reload();return}
   if(t.dataset.go)return go(t.dataset.go);
   if(t.dataset.ver){casoSel=t.dataset.ver;return go('caso')}
   if(t.dataset.a){if(t.tagName!=='A')e.preventDefault();return accion(t.dataset.ot,t.dataset.a)}
   if(t.dataset.copy){const c=S.casos[t.dataset.copy];try{await navigator.clipboard.writeText(mensaje(c));toast('Mensaje copiado')}catch(_){toast('No se pudo copiar: selecciona el texto')}return}
   if(t.dataset.sem){if(!canAct())return;wr(casoSel,['sem',t.dataset.sem]);return}
+  if(t.id==='novX')return marcarVisto();
+  if(t.id==='manPrint')return window.print();
+  if(t.dataset.sec){const e=document.getElementById(t.dataset.sec);if(e)e.scrollIntoView({behavior:'smooth',block:'start'});return}
   if(t.id==='cpin')return dlgCambiarPin(USER);
   if(t.id==='uAdd'){if(isJefe())dlgNuevoUsuario();return}
   if(t.dataset.upin){const u=US.find(x=>x.id===t.dataset.upin);if(u&&(isJefe()||u.id===USER.id))dlgCambiarPin(u);return}
