@@ -156,7 +156,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   ok('jefe: aparece el botón de descuento tras un recupero parcial',!!(await b.page.$('#caso button[data-a="descuento"]')));
   await b.page.click('#caso button[data-a="descuento"]');await b.page.waitForTimeout(150);await b.page.screenshot({path:path.join(out,'8a-descuento-dialogo.png')});
   const dif=Number(await b.page.inputValue('#dM'));
-  ok('descuento sugerido = cotizado − recuperado',await b.page.evaluate(d=>{const c=__DB.crm_casos['5399'];const base=Object.values(c.partidas).filter(p=>p.estadoCM!=='Aprobado').reduce((a,p)=>a+p.total,0);return d===Math.round(base-c.recuperos.reduce((a,r)=>a+r.monto,0))},dif));
+  ok('descuento sugerido = cotizado − recuperado',await b.page.evaluate(d=>{const c=__DB.crm_casos['5399'];const base=Object.values(c.partidas).filter(p=>p.estadoCM!=='Aprobado').reduce((a,p)=>a+p.total,0);return d===Math.round((base-c.recuperos.reduce((a,r)=>a+r.monto,0))*100)/100},dif));
   await b.page.fill('#dM',String(dif+500));await b.page.click('#dOk');await b.page.waitForTimeout(250);
   ok('descuento: no puede superar la diferencia',/no puede ser mayor/.test(await b.page.textContent('#toast')));
   await b.page.fill('#dM',String(dif));await b.page.click('#dOk');await b.page.waitForTimeout(250);
@@ -168,7 +168,13 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   const cs=await b.page.textContent('#caso');
   ok('caso muestra Recuperado al 100% con descuento y pendiente Q0',/Recuperado al 100% · descuento/.test(cs)&&/Pendiente por recuperar\s*Q0\s*Q0/.test(cs));
   await b.page.screenshot({path:path.join(out,'8b-caso-descuento.png'),fullPage:true});
-  ok('el botón de descuento desaparece al quedar en 0',!(await b.page.$('#caso button[data-a="descuento"]')));
+  ok('queda la opción Editar descuento',/Editar descuento/.test(await b.page.textContent('#caso')));
+  await b.page.click('#caso button[data-a="descuento"]');await b.page.waitForTimeout(150);
+  ok('editar: propone el monto exacto y muestra el actual',Number(await b.page.inputValue('#dM'))===dif&&/Descuento registrado/.test(await b.page.textContent('#dlg')));
+  await b.page.fill('#dM',String(dif));await b.page.fill('#dN','sin cambios');await b.page.click('#dOk');await b.page.waitForTimeout(250);
+  ok('editar: avisa si no hay cambios',/ya está registrado/.test(await b.page.textContent('#toast')));
+  await b.page.fill('#dM',String(dif-100.25));await b.page.fill('#dN','se corrige el descuento');await b.page.click('#dOk');await b.page.waitForTimeout(600);
+  ok('editar: guarda el nuevo monto con centavos y deja bitácora con el anterior',await b.page.evaluate(d=>{const c=__DB.crm_casos['5399'];return c.descuento===Math.round((d-100.25)*100)/100&&c.bitacora.some(x=>/descuento corregido/.test(x.resultado)&&/antes/.test(x.nota))},dif));
   await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(250);
   ok('Semana: fila de Descuentos aplicados',/Descuentos aplicados\s*Q/.test(await b.page.textContent('#semana')));
   // Jefe agrega a Jacobo (consulta), Jacobo entra, jefe lo desactiva
