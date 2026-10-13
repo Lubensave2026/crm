@@ -7,7 +7,7 @@ const dir=path.dirname(fileURLToPath(import.meta.url));
 const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
-const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt}')(HOY);
+const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores}')(HOY);
 const xlsx=fs.readdirSync(path.join(dir,'fixtures')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
 const wb=XLSX.read(fs.readFileSync(path.join(dir,'fixtures',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
@@ -82,4 +82,41 @@ ok('mes: incentivo octubre (32,699 × 1%)',oct.incentivo,326.99);
 ok('mes: base por mano de obra',L.calcMes(cm,{...cfg,base:'mo'},'2026-10').incentivo,80);
 ok('meses: lista hacia atrás cruzando el año',JSON.stringify(L.listaMeses('2026-01-15',3)),JSON.stringify(['2026-01','2025-12','2025-11']));
 ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
+
+// ---- Pendientes de días anteriores ----
+{
+  const mk=(ot,extra)=>({ot,estado:'Pendiente',sem:'amarillo',fecha:'2026-10-01',seg:{},bitacora:[],recuperos:[],proximo:null,partidas:{a:{punto:'a',total:1000,mo:100,estadoCM:'Pendiente',recuperada:false}},...extra});
+  const casos={A:mk('A'),B:mk('B',{bitacora:[{fecha:'2026-10-12',canal:'WhatsApp',resultado:'Sin respuesta'}]}),C:mk('C',{estado:'Perdido'}),D:mk('D',{proximo:'2026-10-20'}),E:mk('E'),F:mk('F'),G:mk('G',{bitacora:[{fecha:'2026-10-12',canal:'Sistema',resultado:'En taller'}]}),H:mk('H',{partidas:{a:{punto:'a',total:1000,mo:100,estadoCM:'Aprobado',recuperada:false}}})};
+  const ag={'2026-10-11':['A','B','C'],'2026-10-12':['D','E','G','H'],'2026-10-13':['F'],'2026-09-01':['A']};
+  const pa=L.pendientesAnteriores(casos,ag,'2026-10-13').map(x=>x.c.ot+':'+x.dia);
+  ok('pendientes: sin contacto posterior (A)',pa.includes('A:2026-10-11'),true);
+  ok('pendientes: contactado después no aparece (B)',pa.some(x=>x.startsWith('B')),false);
+  ok('pendientes: cerrado no aparece (C)',pa.some(x=>x.startsWith('C')),false);
+  ok('pendientes: reprogramado a futuro no aparece (D)',pa.some(x=>x.startsWith('D')),false);
+  ok('pendientes: un movimiento de Sistema no cuenta como contacto (G)',pa.includes('G:2026-10-12'),true);
+  ok('pendientes: sin monto pendiente no aparece (H)',pa.some(x=>x.startsWith('H')),false);
+  ok('pendientes: los de la lista de hoy no se repiten (F)',pa.some(x=>x.startsWith('F')),false);
+  ok('pendientes: agendas de hace más de 14 días se ignoran y gana el día más antiguo',pa.filter(x=>x.startsWith('A')).length,1);
+  ok('pendientes: orden por antigüedad',pa[0].startsWith('A'),true);
+  ok('pendientes: si ya está en la lista de hoy deja de ser pendiente',L.pendientesAnteriores(casos,{...ag,'2026-10-13':['F','A']},'2026-10-13').some(x=>x.c.ot==='A'),false);
+}
+
+// ---- Formato nuevo del reporte de Clear Mechanic (encabezado "Fecha / Hora de apertura de Orden") ----
+{
+  const fn=path.join(dir,'fixtures','Cotizaciones-formato-nuevo.xlsx');
+  if(fs.existsSync(fn)){
+    const wbn=XLSX.read(fs.readFileSync(fn),{type:'buffer',cellDates:true});
+    const rn=XLSX.utils.sheet_to_json(wbn.Sheets[wbn.SheetNames[0]],{header:1,raw:true});
+    const pn=L.planImport(rn,{},{hoy:'2026-10-13',usuario:'t'});
+    ok('formato nuevo: se lee',!!pn.stats&&pn.stats.nuevos>0,true);
+    ok('formato nuevo: todos los casos nuevos traen fecha',pn.nuevos.filter(x=>!/^\d{4}-\d{2}-\d{2}$/.test(x.doc.fecha)).length,0);
+    // casos que quedaron sin fecha en producción se reparan al volver a importar
+    const rotos=structuredClone(Object.fromEntries(pn.nuevos.map(x=>[x.ot,{...x.doc,fecha:''}])));
+    const pr=L.planImport(rn,rotos,{hoy:'2026-10-13',usuario:'t'});
+    ok('reparación: reimportar completa la fecha vacía',pr.cambios.length>0&&pr.cambios.every(c=>/^\d{4}-\d{2}-\d{2}$/.test(c.patch.fecha||'')),true);
+    // sin columna de fecha, el archivo se rechaza
+    const sinF=rn.map(r=>r.filter((_,i)=>i!==2&&i!==3));
+    ok('sin columna de fecha: se rechaza el archivo',(L.planImport(sinF,{},{}).error||[]).includes('fecha'),true);
+  }
+}
 process.exit(fallos?1:0);

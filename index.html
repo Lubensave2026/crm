@@ -235,13 +235,13 @@ function computeAgenda(casos,cfg,hechos){
 
 /* ---- Importación de Clear Mechanic ---- */
 function norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'')}
-const COLS={ot:['or','ot','orden'],fecha:['fechahora','fecha'],nombre:['nombre'],apellido:['apellido'],movil:['movil','telefono','celular'],marca:['marca'],modelo:['modelo'],anio:['ano','anio'],km:['kilometraje','km'],placa:['placas','placa'],tipo:['tipo'],punto:['puntodeinspeccion'],partes:['cotpartes'],mo:['cotizacionmo'],total:['cotizaciontotal'],estado:['aprobadoorechazado']};
+const COLS={ot:['or','ot','orden'],fecha:['fechahora','fechahoradeaperturadeorden','fecha'],nombre:['nombre'],apellido:['apellido'],movil:['movil','telefono','celular'],marca:['marca'],modelo:['modelo'],anio:['ano','anio'],km:['kilometraje','km'],placa:['placas','placa'],tipo:['tipo'],punto:['puntodeinspeccion'],partes:['cotpartes'],mo:['cotizacionmo'],total:['cotizaciontotal'],estado:['aprobadoorechazado']};
 /* Devuelve el plan de escrituras sin tocar nada: {error} o {stats, nuevos:[{ot,doc}], cambios:[{ot,patch}]} */
 function planImport(rows,casos,o){
   o=o||{};const usuario=o.usuario||'',ahora=o.ahora||Date.now(),HOY=o.hoy||TODAY;
   const head=rows[0].map(norm),idx={};
   for(const k in COLS)idx[k]=head.findIndex(h=>COLS[k].includes(h));
-  const faltan=['ot','punto','total','estado','tipo'].filter(k=>idx[k]<0);
+  const faltan=['ot','punto','total','estado','tipo','fecha'].filter(k=>idx[k]<0);
   if(faltan.length)return {error:faltan};
   const g=(r,k)=>idx[k]>=0?r[idx[k]]:'';
   let filas=0,partidasN=0,recup=0,recupQ=0,avisos=0,seq=0;
@@ -251,7 +251,7 @@ function planImport(rows,casos,o){
     if(!r||!g(r,'ot'))continue;filas++;
     const ot=otId(g(r,'ot')),tipo=String(g(r,'tipo')).trim(),punto=String(g(r,'punto')||'').trim(),key=pk(punto);
     const est=String(g(r,'estado')||'');const estCM=/aprob/i.test(est)?'Aprobado':/rechaz/i.test(est)?'Rechazado':'Pendiente';
-    let f=g(r,'fecha');f=f instanceof Date?ymd(f):String(f).slice(0,10);
+    let f=g(r,'fecha');f=f instanceof Date?ymd(f):(typeof f==='number'&&f>20000)?new Date(Math.round((f-25569)*864e5)).toISOString().slice(0,10):String(f).slice(0,10);
     if(/^punto/i.test(tipo)){cotiz[ot+'|'+punto]=cotiz[ot+'|'+punto]||{estCM,sin:true};continue}
     if(!/total/i.test(tipo))continue;
     partidasN++;cotiz[ot+'|'+punto]={estCM,sin:false};
@@ -344,6 +344,21 @@ function calcMes(casos,cfg,mes){
   const baseIncentivo=cfg.base==='mo'?recuperadoMO:recuperado;
   return {recuperado:r2(recuperado),recuperadoMO:r2(recuperadoMO),autorizados,contactos,carteraAbierta:r2(carteraAbierta),baseIncentivo:r2(baseIncentivo),incentivo:r2(incentivoCalc(baseIncentivo,cfg))};
 }
+
+/* ---- Pendientes de días anteriores: casos que estuvieron en una agenda pasada y nadie contactó después ---- */
+function pendientesAnteriores(casos,agendas,hoy,diasMax){
+  diasMax=diasMax||14;const deHoy=new Set(agendas[hoy]||[]),res={};
+  for(const d of Object.keys(agendas).sort()){
+    if(d>=hoy||daysBetween(d,hoy)>diasMax)continue;
+    for(const ot of agendas[d]){
+      const c=casos[ot];
+      if(!c||deHoy.has(ot)||!abierto(c)||montoCaso(c)<=0||(c.proximo&&c.proximo>hoy))continue;
+      if((c.bitacora||[]).some(b=>String(b.fecha)>=d&&b.canal!=='Clear Mechanic'&&b.canal!=='Sistema'))continue;
+      if(!res[ot])res[ot]=d;
+    }
+  }
+  return Object.entries(res).map(([ot,d])=>({c:casos[ot],dia:d})).sort((a,b)=>a.dia.localeCompare(b.dia)||score(b.c)-score(a.c));
+}
 /*@PURA-FIN*/
 
 /* ================= DATOS EN LA NUBE ================= */
@@ -409,6 +424,10 @@ const stagePairs=c=>{const st=dueStage(c),p=[];if(st)for(const s of STAGES){p.pu
 async function wr(ot,pairs){
   try{await updateDoc(ref(ot),...pairs,'actualizado',iso(),'actualizadoPor',USER.nombre);return true}
   catch(e){toast('No se pudo guardar: '+(e.code||e.message));return false}
+}
+async function agregarAHoy(ot){
+  if(!canAct()||!S.agenda[TODAY]||!S.casos[ot])return;
+  try{await updateDoc(doc(db,'crm_agenda',TODAY),{ots:arrayUnion(ot)});toast('Agregado a la lista de hoy')}catch(e){toast('No se pudo agregar: '+(e.code||e.message))}
 }
 function accion(ot,tipo){
   const c=S.casos[ot];if(!c||!canAct())return;
@@ -630,14 +649,15 @@ async function alternarAcceso(id){
 let tab='hoy',casoSel=null,fEst='Abiertos',fBus='';
 const loadingHtml=`<div class="empty"><b>Cargando datos…</b>Conectando con Firebase.</div>`;
 function chipsCaso(c){const st=dueStage(c),d=dias(c);return `<span class="chip ${c.sem==='rojo'?'r':c.sem==='verde'?'g':'a'}">${{rojo:'CRÍTICO',amarillo:'PREVENTIVO',verde:'VIGILAR'}[c.sem]}</span>${st?`<span class="chip y">Toca: ${st.l}</span>`:c.estado==='Reprogramado'?`<span class="chip y">Reprogramado: ${fmtD(c.proximo)}</span>`:''}<span class="chip">${esc(c.estado)} · ${d} días</span><span class="chip">M.O. ${Q(moCaso(c))}</span>`}
-function cardHoy(c){
+function cardHoy(c,dia){
   const r=c.resHoy&&c.resHoy.startsWith(TODAY)?c.resHoy.split('|')[1]:null,w=wa(c),A=canAct();
   return `<article class="card ${r?'done':''}"><div class="st ${c.sem}"></div><div class="cb">
    <div class="row"><div><span class="nm">${esc(c.cliente)}</span> <span class="sm">${esc(c.vehiculo)} · ${esc(c.placa)}${c.km?' · '+(+c.km).toLocaleString('es-GT')+' km':''} · OT ${esc(c.ot)}</span></div><span class="money">${Q(montoCaso(c))}</span></div>
    <div class="chips">${chipsCaso(c)}</div>
+   ${dia?`<div class="sm"><b>Quedó sin registrar</b> de la lista del ${fmtD(dia)}.</div>`:''}
    <div class="sm">${topItems(c,5).map(p=>esc(p.punto)+' '+Q(p.total)).join(' · ')}</div>
    ${r?`<div class="msg"><b>Registrado hoy:</b> ${esc(r)}</div><div class="acts">${verRep(c)}<button class="btn" data-ver="${c.ot}">Ver caso</button></div>`:`<div class="msg">${esc(mensaje(c))}</div>
-   <div class="acts">${A?`${w?`<a class="btn k1" href="${w}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-copy="${c.ot}">Copiar</button><button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button>`:''}${verRep(c)}<button class="btn" data-ver="${c.ot}">Ver caso</button></div>`}
+   <div class="acts">${A?`${w?`<a class="btn k1" href="${w}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-copy="${c.ot}">Copiar</button><button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button>`:''}${dia&&A?`<button class="btn" data-addhoy="${c.ot}">Agregar a la lista de hoy</button>`:''}${verRep(c)}<button class="btn" data-ver="${c.ot}">Ver caso</button></div>`}
   </div></article>`;
 }
 function renderHoy(){
@@ -646,7 +666,7 @@ function renderHoy(){
   if(!Object.keys(S.casos).length){el.innerHTML=`<div><h1>Tus casos de hoy</h1></div><div class="empty"><b>Todavía no hay casos</b>${canAct()?'Ve a “Importar Clear Mechanic” y sube el reporte de cotizaciones. El sistema arma la agenda solo.':'Aún no se ha importado el reporte de Clear Mechanic.'}</div>${canAct()?'<div class="acts"><button class="btn k1" data-go="importar">Importar ahora</button></div>':''}`;return}
   if(!S.agenda[TODAY]){el.innerHTML=`<div><h1>Tus casos de hoy</h1></div><div class="empty"><b>${canAct()?'Armando la agenda de hoy…':'La agenda de hoy todavía no está armada'}</b>${canAct()?'Un momento.':'La arma el asesor al abrir el sistema.'}</div>`;return}
   const ag=S.agenda[TODAY].map(o=>S.casos[o]).filter(Boolean);
-  const hechos=ag.filter(c=>c.resHoy&&c.resHoy.startsWith(TODAY)).length;
+  const hechos=ag.filter(c=>c.resHoy&&c.resHoy.startsWith(TODAY)).length,pend=pendientesAnteriores(S.casos,S.agenda,TODAY);
   const sem=semanaStats();const ult=S.imports.length?S.imports[0].fecha:null;const atras=ult?daysBetween(ult,TODAY):null;const ub=S.cfg.ultimoRespaldo,bk=ub?daysBetween(ub.fecha,TODAY):null;
   el.innerHTML=`<div class="row"><div><h1>Tus casos de hoy</h1><p class="lead">Entre ${S.cfg.min} y ${S.cfg.max} casos por día: primero los reprogramados y los seguimientos que vencen (48 h · 7 d · 30 d), después los de mayor monto × urgencia. Registra el resultado de cada uno.</p></div>${canAct()?'<button class="btn" id="reAg">Rehacer agenda</button>':''}</div>
    <div class="kpis"><div class="k hl"><div class="l">En juego hoy</div><div class="v">${Q(ag.reduce((a,c)=>a+montoCaso(c),0))}</div><div class="n">${pl(ag.length,'caso asignado','casos asignados')}</div></div>
@@ -655,7 +675,8 @@ function renderHoy(){
    ${atras!==null&&atras>7?`<div class="msg"><b>Última carga de Clear Mechanic hace ${atras} días.</b> Sube el reporte de los últimos 30 días para no perder los seguimientos de 48 h y 7 días. ${canAct()?'<button class="btn" data-go="importar">Importar</button>':''}</div>`:''}
    ${!ult?`<div class="msg"><b>Aún no hay cargas registradas.</b></div>`:''}
    ${isJefe()&&(bk===null||bk>7)?`<div class="msg"><b>${bk===null?'Todavía no hay respaldo del CRM.':'Último respaldo hace '+bk+' días.'}</b> Descárgalo en Semana → Respaldo. <button class="btn" data-go="semana">Ir a Semana</button></div>`:''}
-   ${ag.length?ag.map(cardHoy).join(''):`<div class="empty"><b>Sin casos para hoy</b>No hay seguimientos pendientes en la cartera.</div>`}`;
+   ${ag.length?ag.map(c=>cardHoy(c)).join(''):`<div class="empty"><b>Sin casos para hoy</b>No hay seguimientos pendientes en la cartera.</div>`}
+   ${pend.length?`<div id="pendAnt"><h2>Pendientes de días anteriores (${pend.length})</h2><p class="lead">Casos que estaban en la lista de un día pasado y nadie ha contactado desde entonces. No cuentan en el tope de ${S.cfg.max} por día; si quieres trabajarlos hoy puedes agregarlos a la lista.</p>${pend.slice(0,15).map(x=>cardHoy(x.c,x.dia)).join('')}${pend.length>15?`<p class="note">Y ${pend.length-15} más; aparecerán a medida que se atiendan estos.</p>`:''}</div>`:''}`;
 }
 function renderCartera(){
   const el=$('#cartera');if(!ready.casos){el.innerHTML=loadingHtml;return}
@@ -786,6 +807,7 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manu
    Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
    (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
 const NOVEDADES=[
+ {id:'2026-10-13e',fecha:'2026-10-13',titulo:'Pendientes de días anteriores en “Hoy”',texto:'Los casos que estaban en la lista de un día pasado y nadie contactó ahora aparecen en una sección aparte debajo de la lista de hoy, para que no se escapen. Puedes trabajarlos ahí o agregarlos a la lista de hoy.',sec:'m-hoy'},
  {id:'2026-10-13d',fecha:'2026-10-13',titulo:'Jefe de taller: quitar un caso que ya estaba autorizado',texto:'Si la carga de Clear Mechanic contó como recuperado un caso que el cliente ya había autorizado antes, el jefe puede quitarlo de lo recuperado desde el caso, con su nota.',sec:'m-jefe'},
  {id:'2026-10-13c',fecha:'2026-10-13',titulo:'Cierre mensual del incentivo',texto:'En Semana hay un historial de meses cerrados con la meta, los porcentajes, lo recuperado y el incentivo de cada mes. El jefe de taller guarda el cierre; el respaldo en Excel lo incluye.',sec:'m-semana'},
  {id:'2026-10-13b',fecha:'2026-10-13',titulo:'Jefe de taller: ajustar un caso con descuento',texto:'Si el cliente autorizó todo pero se facturó con descuento y quedó una diferencia pendiente, el jefe puede ajustar el caso a 100% recuperado desde el caso. El descuento queda registrado y se ve en Semana.',sec:'m-jefe'},
@@ -801,7 +823,7 @@ const MAN=[
  {id:'m-consulta',r:-1,t:'Tu usuario es de consulta',h:`<p>Con tu usuario puedes ver la agenda, la cartera, cada caso y el reporte de la semana, pero no registrar contactos ni cargar archivos. Cualquier cambio lo hace el asesor o el jefe de taller.</p>`},
  {id:'m-entrar',r:0,t:'Entrar, salir y cambiar tu PIN',h:`<ul><li>Abre la dirección de la herramienta, toca tu <b>nombre</b> y escribe tu <b>PIN de 6 dígitos</b>.</li><li>Tu PIN es personal: no lo compartas. <b>Cámbialo la primera vez</b> con el botón <b>Cambiar PIN</b> (arriba a la derecha): PIN actual, PIN nuevo y repetirlo.</li><li>Si lo olvidas, el jefe de taller te lo restablece.</li><li>Al terminar toca <b>Salir</b>, sobre todo en computadoras compartidas.</li></ul>`},
  {id:'m-instalar',r:0,t:'Instalar como aplicación (con el logo)',h:`<p>Puedes instalar la herramienta para abrirla con un ícono de Lube N Save y en su propia ventana, sin la barra del navegador.</p><ul><li><b>Computadora con Chrome:</b> abre la dirección de la herramienta, menú <b>⋮</b> (arriba a la derecha) → <b>Guardar y compartir</b> → <b>Instalar página como aplicación…</b>. Se crea el ícono en el escritorio.</li><li><b>Computadora con Edge:</b> menú <b>…</b> → <b>Aplicaciones</b> → <b>Instalar este sitio como aplicación</b>.</li><li><b>Celular Android (Chrome):</b> menú <b>⋮</b> → <b>Instalar aplicación</b> (o <b>Agregar a la pantalla de inicio</b>).</li><li><b>iPhone (Safari):</b> botón <b>Compartir</b> → <b>Agregar a pantalla de inicio</b>.</li></ul><p>Si ya tenías un acceso directo anterior (con una “C” gris), <b>bórralo</b> y vuelve a instalarla: el viejo no cambia de ícono por sí solo.</p>`},
- {id:'m-hoy',r:1,t:'Tu rutina diaria: pantalla “Hoy”',h:`<p>Al empezar el día abre <b>Hoy</b>. Verás de 2 a 5 tarjetas; el color de la izquierda es la urgencia (rojo = crítico, amarillo = preventivo). Para cada una:</p><ol><li>Lee el mensaje sugerido y toca <b>Abrir WhatsApp</b>: se abre el chat con el mensaje ya escrito <b>y el enlace al reporte de fotos y videos</b>. Revísalo y envíalo desde WhatsApp.</li><li>Si quieres ver las fotos y lo cotizado, toca <b>Ver reporte</b> (es el mismo enlace que verá el cliente).</li><li>Apenas el cliente responda (o no), <b>registra el resultado</b>. Una tarjeta sin registrar es un cliente que el sistema cree que no has contactado.</li></ol><p><b>Meta: todas las tarjetas registradas antes de las 12:00.</b></p>
+ {id:'m-hoy',r:1,t:'Tu rutina diaria: pantalla “Hoy”',h:`<p>Al empezar el día abre <b>Hoy</b>. Verás de 2 a 5 tarjetas; el color de la izquierda es la urgencia (rojo = crítico, amarillo = preventivo). Para cada una:</p><ol><li>Lee el mensaje sugerido y toca <b>Abrir WhatsApp</b>: se abre el chat con el mensaje ya escrito <b>y el enlace al reporte de fotos y videos</b>. Revísalo y envíalo desde WhatsApp.</li><li>Si quieres ver las fotos y lo cotizado, toca <b>Ver reporte</b> (es el mismo enlace que verá el cliente).</li><li>Apenas el cliente responda (o no), <b>registra el resultado</b>. Una tarjeta sin registrar es un cliente que el sistema cree que no has contactado.</li></ol><p><b>Meta: todas las tarjetas registradas antes de las 12:00.</b></p><p>Más abajo, en <b>Pendientes de días anteriores</b>, aparecen los casos que estaban en la lista de un día pasado y que nadie ha contactado desde entonces (hasta 14 días atrás). Se trabajan igual que los de hoy, y con <b>Agregar a la lista de hoy</b> pasan a contar entre los asignados del día. Los que ya contactaste o reprogramaste no aparecen.</p>
   <div class="tw"><table><thead><tr><th>Botón</th><th>Cuándo usarlo</th><th>Qué pasa</th></tr></thead><tbody>
   <tr><td>Autorizó</td><td>El cliente aceptó hacer el trabajo</td><td>Registra el monto recuperado (ver más abajo)</td></tr>
   <tr><td>Reprogramar</td><td>Pide que lo busques después</td><td>Eliges la fecha; el caso vuelve a “Hoy” ese día</td></tr>
@@ -836,13 +858,14 @@ function renderManual(){
 /* ================= EVENTOS ================= */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec],#cierreGo');if(!t)return;
+  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec],#cierreGo,[data-addhoy]');if(!t)return;
   if(t.id==='salir'){sess('user',null);location.reload();return}
   if(t.dataset.go)return go(t.dataset.go);
   if(t.dataset.ver){casoSel=t.dataset.ver;return go('caso')}
   if(t.dataset.a){if(t.tagName!=='A')e.preventDefault();return accion(t.dataset.ot,t.dataset.a)}
   if(t.dataset.copy){const c=S.casos[t.dataset.copy];try{await navigator.clipboard.writeText(mensaje(c));toast('Mensaje copiado')}catch(_){toast('No se pudo copiar: selecciona el texto')}return}
   if(t.dataset.sem){if(!canAct())return;wr(casoSel,['sem',t.dataset.sem]);return}
+  if(t.dataset.addhoy)return agregarAHoy(t.dataset.addhoy);
   if(t.id==='novX')return marcarVisto();
   if(t.id==='cierreGo'){if(isJefe())dlgCierre();return}
   if(t.id==='manPrint')return window.print();

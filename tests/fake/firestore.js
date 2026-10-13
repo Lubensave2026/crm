@@ -32,3 +32,5 @@ export async function getDoc(r){const d=tbl(r.c)[r.id];return {exists:()=>!!d,da
 export async function getDocs(t){const T=tbl(t.c);return {docs:Object.keys(T).map(i=>({id:i,data:()=>structuredClone(T[i])}))}}
 export function writeBatch(){const ops=[];return {set(r,d,o){ops.push(()=>setDoc(r,d,o));return this},async commit(){if(ops.length>500)throw new Error('batch>500');for(const f of ops)await f()}}}
 export async function runTransaction(db,fn){const w=[];const tx={get:async r=>getDoc(r),set(r,d){w.push(()=>setDoc(r,d))}};const res=await fn(tx);for(const f of w)await f();return res}
+
+G.__notify=()=>notify();

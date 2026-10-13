@@ -86,6 +86,22 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('Caso sin enlace: avisa y no muestra el botón',/no tiene enlace de inspección/.test(await page.textContent('#caso'))&&!(await page.$('#caso a:has-text("Ver reporte")')));
     await page.click('nav button[data-t="hoy"]');await page.waitForTimeout(200);
     ok('Hoy: tarjetas con botón Ver reporte',(await page.$$('#hoy a:has-text("Ver reporte")')).length>=1);
+    // Pendientes de días anteriores (agenda de ayer con dos casos que nadie contactó)
+    await page.evaluate(()=>{
+      const hoyOts=new Set(Object.values(__DB.crm_agenda).flatMap(a=>a.ots));
+      const g=new Date(Date.now()-86400000).toLocaleDateString('en-CA',{timeZone:'America/Guatemala'});
+      const libres=Object.values(__DB.crm_casos).filter(c=>['Pendiente','Rechazado'].includes(c.estado)&&!hoyOts.has(c.ot)&&(c.bitacora||[]).every(b=>b.canal==='Clear Mechanic'||b.canal==='Sistema')).slice(0,2).map(c=>c.ot);
+      __DB.crm_agenda[g]={ots:libres,creadaPor:'test',creada:new Date().toISOString()};__notify();
+    });
+    await page.click('nav button[data-t="cartera"]');await page.click('nav button[data-t="hoy"]');await page.waitForTimeout(300);
+    ok('Hoy: sección de pendientes de días anteriores con 2 casos',/Pendientes de días anteriores \(2\)/.test(await page.textContent('#hoy'))&&(await page.$$('#pendAnt article')).length===2);
+    ok('pendientes: indica de qué lista quedó sin registrar',/Quedó sin registrar/.test(await page.textContent('#pendAnt')));
+    await page.screenshot({path:path.join(out,'10-pendientes-anteriores.png'),fullPage:true});
+    const otAdd=await page.getAttribute('#pendAnt button[data-addhoy] >> nth=0','data-addhoy');
+    await page.click('#pendAnt button[data-addhoy] >> nth=0');await page.waitForTimeout(400);
+    ok('agregar a la lista de hoy: queda en la agenda y sale de pendientes',await page.evaluate(o=>Object.values(__DB.crm_agenda).some(a=>a.ots.includes(o)&&a.creadaPor!=='test'),otAdd)&&(await page.$$('#pendAnt article')).length===1);
+    await page.click('#pendAnt button[data-a="sinresp"]');await page.waitForTimeout(500);
+    ok('pendientes: al registrar un contacto el caso deja de ser pendiente',!(await page.$('#pendAnt')));
     // Protección: monto menor al pendiente con Tipo "Total" (por defecto) se registra como Parcial
     await page.click('nav button[data-t="cartera"]');await page.fill('#fBus','5399');await page.click('tr[data-ver="5399"]');
     await page.click('#caso button[data-a="autorizo"]');await page.fill('#aM','5000');
