@@ -72,6 +72,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('bitácora guarda usuario',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.some(b=>b.usuario==='Ricardo'&&/Autorizado/.test(b.resultado))));
     ok('bitácora conserva la entrada de importación',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.length===2));
     ok('asesor no ve Ajustes',!(await page.$('#cSave')));
+    ok('asesor ve el historial de cierres pero no el botón de cerrar',/Cierre mensual/.test(await page.textContent('#semana'))&&!(await page.$('#cierreGo')));
     await page.click('nav button[data-t="cartera"]');await page.fill('#fBus','5381');await page.click('tr[data-ver="5381"]');ok('Caso: sin enlace a TallerFLOW',!/TallerFLOW/i.test(await page.textContent('#caso')));ok('Caso: conserva Marcar en taller',!!(await page.$('#caso button[data-a="taller"]')));await page.click('nav button[data-t="semana"]');
     ok('sin datos de casos en localStorage',await page.evaluate(()=>!Object.keys(localStorage).some(k=>/casos|cartera|agenda/i.test(k))));
     // Enlace de inspección en el caso, en la tarjeta de Hoy y en el mensaje
@@ -95,7 +96,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     const [dl]=await Promise.all([page.waitForEvent('download'),page.click('#bkp')]);
     const fx=path.join(out,'respaldo.xlsx');await dl.saveAs(fx);await page.waitForTimeout(300);
     const XL=(await import('xlsx')).default;const wbk=XL.read(fs.readFileSync(fx),{type:'buffer'});
-    ok('respaldo: hojas',JSON.stringify(wbk.SheetNames)===JSON.stringify(['Resumen','Cartera','Partidas','Bitácora','Recuperos']));
+    ok('respaldo: hojas',JSON.stringify(wbk.SheetNames)===JSON.stringify(['Resumen','Cartera','Partidas','Bitácora','Recuperos','Cierres mensuales']));
     ok('respaldo: 102 casos en Cartera',XL.utils.sheet_to_json(wbk.Sheets.Cartera).length===102);
     ok('respaldo: nombre con fecha',/^CRM_LNS_Respaldo_\d{4}-\d{2}-\d{2}\.xlsx$/.test(dl.suggestedFilename()));
     ok('respaldo: se anota en crm_config',await page.evaluate(()=>__DB.crm_config.zona10.ultimoRespaldo?.por==='Ricardo'));
@@ -177,6 +178,19 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   ok('editar: guarda el nuevo monto con centavos y deja bitácora con el anterior',await b.page.evaluate(d=>{const c=__DB.crm_casos['5399'];return c.descuento===Math.round((d-100.25)*100)/100&&c.bitacora.some(x=>/descuento corregido/.test(x.resultado)&&/antes/.test(x.nota))},dif));
   await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(250);
   ok('Semana: fila de Descuentos aplicados',/Descuentos aplicados\s*Q/.test(await b.page.textContent('#semana')));
+  // Cierre mensual (jefe)
+  const mesAct=new Date().toLocaleDateString('en-CA',{timeZone:'America/Guatemala'}).slice(0,7);
+  ok('cierre: el jefe ve el selector y el botón',!!(await b.page.$('#cierreMes'))&&!!(await b.page.$('#cierreGo')));
+  ok('cierre: vista previa con el recuperado del mes',/recuperado\s*Q5,000/.test((await b.page.textContent('#cierre')).replace(/\s+/g,' ')));
+  await b.page.click('#cierreGo');await b.page.waitForTimeout(150);
+  ok('cierre: el diálogo avisa que el mes está en curso',/todavía está en curso/.test(await b.page.textContent('#dlg')));
+  await b.page.click('#dOk');await b.page.waitForTimeout(500);
+  ok('cierre: guardado con meta, % y incentivo del mes',await b.page.evaluate(m=>{const c=__DB.crm_cierres&&__DB.crm_cierres[m];return !!c&&c.recuperado===5000&&c.meta===60000&&c.pct1===1&&c.incentivo===50&&c.cerradoPor==='Byron'&&c.autorizados===1},mesAct));
+  ok('cierre: aparece en la tabla de meses cerrados',/Q50/.test(await b.page.textContent('#cierre'))&&/Byron/.test(await b.page.textContent('#cierre')));
+  await b.page.click('#cierreGo');await b.page.waitForTimeout(150);
+  ok('cierre: si ya existe, avisa que se reemplazará',/Ya existe un cierre/.test(await b.page.textContent('#dlg')));
+  await b.page.click('#dCancel');
+  await b.page.screenshot({path:path.join(out,'9-cierre-mensual.png'),fullPage:true});
   // Jefe agrega a Jacobo (consulta), Jacobo entra, jefe lo desactiva
   await b.page.click('#uAdd');await b.page.fill('#uN','Jacobo');await b.page.selectOption('#uR','consulta');await b.page.fill('#uP','12');await b.page.click('#dOk');await b.page.waitForTimeout(300);
   ok('usuario nuevo: exige 6 dígitos',/6 dígitos/.test(await b.page.textContent('#toast')));

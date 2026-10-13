@@ -7,7 +7,7 @@ const dir=path.dirname(fileURLToPath(import.meta.url));
 const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
-const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte}')(HOY);
+const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt}')(HOY);
 const xlsx=fs.readdirSync(path.join(dir,'..','referencia')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
 const wb=XLSX.read(fs.readFileSync(path.join(dir,'..','referencia',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
@@ -67,4 +67,19 @@ if(fx){
   ok('rechaza enlaces que no son https',L.planEnlaces(raro,{}).stats.invalidos,1);
   ok('error si falta Orden digital',L.planEnlaces([['OR #','Nombre']],{}).error[0],'Orden digital');
 }
+
+// ---- Cierre mensual ----
+const cfg={meta:100000,pct1:1,pct2:2.5,base:'total'};
+ok('incentivo: sobre la meta (130K → Q1,750)',L.incentivoCalc(130000,cfg),1750);
+ok('incentivo: bajo la meta (50K → Q500)',L.incentivoCalc(50000,cfg),500);
+ok('incentivo: exacto en la meta',L.incentivoCalc(100000,cfg),1000);
+const cm={'1':{ot:'1',estado:'Pendiente',partidas:{},recuperos:[{fecha:'2026-10-03',monto:22699,mo:5000,tipo:'parcial'},{fecha:'2026-09-30',monto:1000,mo:200,tipo:'total'}],bitacora:[{fecha:'2026-10-03',canal:'WhatsApp'},{fecha:'2026-10-03',canal:'Sistema'},{fecha:'2026-09-30',canal:'Llamada'}]},
+ '2':{ot:'2',estado:'Recuperado',partidas:{},recuperos:[{fecha:'2026-10-20',monto:10000,mo:3000,tipo:'total'}],bitacora:[{fecha:'2026-10-20',canal:'WhatsApp'},{fecha:'2026-10-21',canal:'Clear Mechanic'}]}};
+const oct=L.calcMes(cm,cfg,'2026-10'),sep=L.calcMes(cm,cfg,'2026-09');
+ok('mes: recuperado de octubre',oct.recuperado,32699);ok('mes: M.O. de octubre',oct.recuperadoMO,8000);ok('mes: autorizaciones de octubre',oct.autorizados,2);
+ok('mes: contactos (sin Sistema ni Clear Mechanic)',oct.contactos,2);ok('mes: septiembre separado',sep.recuperado,1000);
+ok('mes: incentivo octubre (32,699 × 1%)',oct.incentivo,326.99);
+ok('mes: base por mano de obra',L.calcMes(cm,{...cfg,base:'mo'},'2026-10').incentivo,80);
+ok('meses: lista hacia atrás cruzando el año',JSON.stringify(L.listaMeses('2026-01-15',3)),JSON.stringify(['2026-01','2025-12','2025-11']));
+ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
 process.exit(fallos?1:0);

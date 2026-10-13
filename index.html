@@ -188,7 +188,7 @@ const FB_CFG={apiKey:"AIzaSyAf8qbial6VACkhtM6po9N97osPQ-hEnac",authDomain:"crm-l
 const app=initializeApp(FB_CFG),auth=getAuth(app),db=initializeFirestore(app,{ignoreUndefinedProperties:true});
 
 const DEF_CFG={min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'};
-let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null};
+let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null,cierres:[]};
 let USER=null,US=[];const ready={casos:false,agenda:false,cfg:false,enl:false};
 const gtToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:'America/Guatemala'});
 let TODAY=gtToday();
@@ -327,6 +327,23 @@ function planEnlaces(rows,actuales){
   const ks=Object.keys(cambios),nuevos=ks.filter(k=>!actuales[k]).length;
   return {stats:{filas,nuevos,actualizados:ks.length-nuevos,iguales:filas-invalidos-ks.length,invalidos},cambios};
 }
+
+/* ---- Cierre mensual ---- */
+const MESES_L=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const mesTxt=m=>MESES_L[+m.slice(5)-1]+' '+m.slice(0,4);
+function listaMeses(hoy,n){const [y,m]=hoy.split('-').map(Number);return Array.from({length:n},(_,i)=>{const d=new Date(y,m-1-i,1);return d.getFullYear()+'-'+pad(d.getMonth()+1)})}
+function incentivoCalc(base,cfg){const t1=Math.min(base,cfg.meta)*cfg.pct1/100,t2=Math.max(0,base-cfg.meta)*cfg.pct2/100;return t1+t2}
+/* Lo recuperado, autorizado y contactado en un mes ("AAAA-MM") */
+function calcMes(casos,cfg,mes){
+  let recuperado=0,recuperadoMO=0,autorizados=0,contactos=0,carteraAbierta=0;
+  for(const c of Object.values(casos)){
+    for(const r of (c.recuperos||[]))if(String(r.fecha).startsWith(mes)){recuperado+=r.monto||0;recuperadoMO+=r.mo||0;autorizados++}
+    for(const b of (c.bitacora||[]))if(String(b.fecha).startsWith(mes)&&b.canal!=='Clear Mechanic'&&b.canal!=='Sistema')contactos++;
+    if(abierto(c))carteraAbierta+=montoCaso(c);
+  }
+  const baseIncentivo=cfg.base==='mo'?recuperadoMO:recuperado;
+  return {recuperado:r2(recuperado),recuperadoMO:r2(recuperadoMO),autorizados,contactos,carteraAbierta:r2(carteraAbierta),baseIncentivo:r2(baseIncentivo),incentivo:r2(incentivoCalc(baseIncentivo,cfg))};
+}
 /*@PURA-FIN*/
 
 /* ================= DATOS EN LA NUBE ================= */
@@ -342,11 +359,12 @@ function startSync(){
   unsubs.push(onSnapshot(collection(db,'crm_agenda'),snap=>{
     snap.docChanges().forEach(d=>{if(d.type==='removed')delete S.agenda[d.doc.id];else S.agenda[d.doc.id]=d.doc.data().ots||[]});
     ready.agenda=true;scheduleRender();ensureAgenda()},syncErr));
+  unsubs.push(onSnapshot(query(collection(db,'crm_cierres'),orderBy('mes','desc')),snap=>{S.cierres=snap.docs.map(d=>d.data());scheduleRender()},syncErr));
   unsubs.push(onSnapshot(doc(db,'crm_enlaces','zona10'),s=>{const d=s.exists()?s.data():{};S.enlaces=d.urls||{};S.enlUlt=d.ultima||null;ready.enl=true;scheduleRender()},syncErr));
   unsubs.push(onSnapshot(doc(db,'crm_config','zona10'),s=>{S.cfg={...DEF_CFG,...(s.exists()?s.data():{})};ready.cfg=true;scheduleRender()},syncErr));
   unsubs.push(onSnapshot(query(collection(db,'crm_importaciones'),orderBy('creada','desc'),limit(10)),snap=>{S.imports=snap.docs.map(d=>d.data());scheduleRender()},syncErr));
 }
-function stopSync(){unsubs.splice(0).forEach(u=>u());S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null};ready.casos=ready.agenda=ready.cfg=ready.enl=false}
+function stopSync(){unsubs.splice(0).forEach(u=>u());S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null,cierres:[]};ready.casos=ready.agenda=ready.cfg=ready.enl=false}
 
 const canAct=()=>USER&&USER.rol!=='consulta';
 const isJefe=()=>USER&&USER.rol==='jefe';
@@ -544,6 +562,8 @@ async function descargarRespaldo(){
   add('Partidas',XLSX.utils.json_to_sheet(H.Partidas),[8,26,46,20,11,10,10,12]);
   add('Bitácora',XLSX.utils.json_to_sheet(H['Bitácora']),[12,8,26,16,34,40,12]);
   add('Recuperos',XLSX.utils.json_to_sheet(H.Recuperos),[12,8,26,12,10,16,12]);
+  const hc=['Mes','Meta Q','% hasta la meta','% sobre la meta','Base','Recuperado Q','M.O. recuperada Q','Base del incentivo Q','Incentivo Q','Autorizaciones','Contactos','Cartera abierta al cierre Q','Asesor','Cerrado por','Cerrado'];
+  add('Cierres mensuales',XLSX.utils.aoa_to_sheet([hc,...[...S.cierres].reverse().map(x=>[x.mes,x.meta,x.pct1,x.pct2,x.base==='mo'?'Mano de obra':'Total',x.recuperado,x.recuperadoMO,x.baseIncentivo,x.incentivo,x.autorizados,x.contactos,x.carteraAbierta,x.asesor||'',x.cerradoPor||'',x.cerrado||''])]),[10,10,10,10,13,13,13,14,12,12,10,16,12,12,24]);
   try{XLSX.writeFile(wb,'CRM_LNS_Respaldo_'+TODAY+'.xlsx')}catch(e){toast('No se pudo generar el archivo: '+e.message);return}
   try{await setDoc(doc(db,'crm_config','zona10'),{ultimoRespaldo:{fecha:TODAY,por:USER.nombre,casos:Object.keys(S.casos).length}},{merge:true});toast('Respaldo descargado')}
   catch(e){toast('Se descargó, pero no se pudo anotar la fecha: '+(e.code||e.message))}
@@ -661,8 +681,31 @@ function semanaStats(){
   for(const c of Object.values(S.casos)){(c.bitacora||[]).forEach(b=>{if(porDia[b.fecha]&&b.canal!=='Clear Mechanic'&&b.canal!=='Sistema')porDia[b.fecha].cont++});(c.recuperos||[]).forEach(r=>{if(porDia[r.fecha]){porDia[r.fecha].aut++;porDia[r.fecha].monto+=r.monto;monto+=r.monto;mo+=r.mo;autor++}})}
   return {ws,porDia,monto,mo,autor};
 }
-function mesStats(){const m=TODAY.slice(0,7);let monto=0,mo=0;for(const c of Object.values(S.casos))(c.recuperos||[]).forEach(r=>{if(r.fecha.startsWith(m)){monto+=r.monto;mo+=r.mo}});return {monto,mo}}
-function incentivo(base){const {meta,pct1,pct2}=S.cfg;const t1=Math.min(base,meta)*pct1/100,t2=Math.max(0,base-meta)*pct2/100;return t1+t2}
+function mesStats(){const r=calcMes(S.casos,S.cfg,TODAY.slice(0,7));return {monto:r.recuperado,mo:r.recuperadoMO}}
+const incentivo=base=>incentivoCalc(base,S.cfg);
+let cierreSel='';
+function panelCierre(){
+  const meses=listaMeses(TODAY,6);if(!meses.includes(cierreSel))cierreSel=meses[0];
+  const cm=calcMes(S.casos,S.cfg,cierreSel),ex=S.cierres.find(x=>x.mes===cierreSel);
+  const filas=S.cierres.map(x=>`<tr><td>${esc(mesTxt(x.mes))}</td><td class="n">${Q(x.meta)}</td><td>${x.pct1}% / ${x.pct2}%</td><td>${x.base==='mo'?'M.O.':'Total'}</td><td class="n">${Q(x.recuperado)}</td><td class="n">${x.autorizados}</td><td class="n"><b>${Q(x.incentivo)}</b></td><td>${esc(x.cerradoPor||'')} · ${fmtD((x.cerrado||'').slice(0,10))}</td></tr>`).join('');
+  return `<div class="panel" id="cierre"><h2>Cierre mensual</h2>
+   <p class="sm">Guarda, para cada mes, la meta y los porcentajes vigentes, lo recuperado y el incentivo que salió, para que no se pierda aunque después cambies los ajustes.</p>
+   ${isJefe()?`<div class="toolbar"><select id="cierreMes" aria-label="Mes">${meses.map(m=>`<option value="${m}" ${m===cierreSel?'selected':''}>${esc(mesTxt(m))}</option>`).join('')}</select>
+    <span class="sm">Con los ajustes actuales: recuperado <b>${Q(cm.recuperado)}</b> · incentivo <b>${Q(cm.incentivo)}</b></span>
+    <button class="btn k1" id="cierreGo">${ex?'Reemplazar cierre':'Guardar cierre'}</button></div>`:''}
+   ${S.cierres.length?`<div class="tw"><table><thead><tr><th>Mes</th><th style="text-align:right">Meta</th><th>% hasta / sobre</th><th>Base</th><th style="text-align:right">Recuperado</th><th style="text-align:right">Autorizados</th><th style="text-align:right">Incentivo</th><th>Cerrado por</th></tr></thead><tbody>${filas}</tbody></table></div>`:'<p class="sm">Todavía no hay meses cerrados.</p>'}</div>`;
+}
+function dlgCierre(){
+  const mes=cierreSel,cm=calcMes(S.casos,S.cfg,mes),ex=S.cierres.find(x=>x.mes===mes);
+  openDlg(`<h2>Cerrar ${esc(mesTxt(mes))}</h2>
+   <p class="sm">Se guardará con los ajustes <b>actuales</b>: meta ${Q(S.cfg.meta)}, ${S.cfg.pct1}% hasta la meta y ${S.cfg.pct2}% sobre la meta, base ${S.cfg.base==='mo'?'mano de obra':'monto total'}.</p>
+   <p class="sm">Recuperado: <b>${Q(cm.recuperado)}</b> (M.O. ${Q(cm.recuperadoMO)}) · ${pl(cm.autorizados,'autorización','autorizaciones')} · ${pl(cm.contactos,'contacto','contactos')} · <b>Incentivo: ${Q(cm.incentivo)}</b></p>
+   ${ex?`<p class="msg"><b>Ya existe un cierre de este mes</b> (guardado por ${esc(ex.cerradoPor||'—')} el ${fmtD((ex.cerrado||'').slice(0,10))}, incentivo ${Q(ex.incentivo)}). Se reemplazará.</p>`:''}
+   ${mes===TODAY.slice(0,7)?'<p class="note">El mes todavía está en curso: si lo cierras ahora, el cierre queda parcial. Puedes reemplazarlo después.</p>':''}`,()=>{
+    const d={mes,meta:S.cfg.meta,pct1:S.cfg.pct1,pct2:S.cfg.pct2,base:S.cfg.base,asesor:S.cfg.asesor,recuperado:cm.recuperado,recuperadoMO:cm.recuperadoMO,baseIncentivo:cm.baseIncentivo,incentivo:cm.incentivo,autorizados:cm.autorizados,contactos:cm.contactos,carteraAbierta:cm.carteraAbierta,cerradoPor:USER.nombre,cerrado:iso()};
+    setDoc(doc(db,'crm_cierres',mes),d).then(()=>toast('Cierre de '+mesTxt(mes)+' guardado')).catch(e=>toast('No se pudo guardar el cierre: '+(e.code||e.message)));
+  });
+}
 function renderSemana(){
   const el=$('#semana');if(!ready.casos){el.innerHTML=loadingHtml;return}
   const s=semanaStats(),m=mesStats(),base=S.cfg.base==='mo'?m.mo:m.monto,inc=incentivo(base);
@@ -687,6 +730,7 @@ function renderSemana(){
   <div class="panel"><h2>Incentivo de ${esc(S.cfg.asesor)} · mes en curso</h2>
    <p class="sm">Base: ${S.cfg.base==='mo'?'mano de obra recuperada':'monto recuperado'} del mes · ${S.cfg.pct1}% hasta la meta de ${Q(S.cfg.meta)} y ${S.cfg.pct2}% sobre el excedente.</p>
    <div class="kpis"><div class="k"><div class="l">Base del mes</div><div class="v">${Q(base)}</div><div class="bar" style="height:6px;margin-top:6px"><i class="y" style="width:${S.cfg.meta?Math.min(100,base/S.cfg.meta*100):0}%"></i></div><div class="n">${S.cfg.meta?Math.round(base/S.cfg.meta*100):0}% de la meta</div></div><div class="k hl"><div class="l">Incentivo</div><div class="v">${Q(inc)}</div><div class="n">propuesta, sujeta a aprobación</div></div></div></div></div>
+  ${panelCierre()}
   ${canAct()?`<div class="panel"><h2>Respaldo</h2><p class="sm">Excel con la cartera, las partidas, la bitácora y los recuperos (incluye casos cerrados). Contiene datos de clientes: guárdalo solo en tu computadora o nube privada. Recomendado: cada sábado.</p>
    <p class="sm" id="bkInfo">${S.cfg.ultimoRespaldo?`Último respaldo: <b>${fmtD(S.cfg.ultimoRespaldo.fecha)}</b> por ${esc(S.cfg.ultimoRespaldo.por||'—')} (${S.cfg.ultimoRespaldo.casos} casos).`:'Todavía no se ha descargado ningún respaldo.'}</p>
    <div class="acts"><button class="btn k1" id="bkp">Descargar respaldo (Excel)</button></div></div>`:''}
@@ -720,6 +764,7 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manu
    Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
    (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
 const NOVEDADES=[
+ {id:'2026-10-13c',fecha:'2026-10-13',titulo:'Cierre mensual del incentivo',texto:'En Semana hay un historial de meses cerrados con la meta, los porcentajes, lo recuperado y el incentivo de cada mes. El jefe de taller guarda el cierre; el respaldo en Excel lo incluye.',sec:'m-semana'},
  {id:'2026-10-13b',fecha:'2026-10-13',titulo:'Jefe de taller: ajustar un caso con descuento',texto:'Si el cliente autorizó todo pero se facturó con descuento y quedó una diferencia pendiente, el jefe puede ajustar el caso a 100% recuperado desde el caso. El descuento queda registrado y se ve en Semana.',sec:'m-jefe'},
  {id:'2026-10-13a',fecha:'2026-10-13',titulo:'Instala la herramienta como aplicación con el logo',texto:'Ahora puedes instalarla en tu computadora o celular con el ícono de Lube N Save y abrirla sin la barra del navegador. Si ya tenías un acceso directo viejo (con una “C”), bórralo y vuelve a instalarla.',sec:'m-instalar'},
  {id:'2026-10-12b',fecha:'2026-10-12',titulo:'Manual de usuario dentro de la herramienta',texto:'Esta pestaña tiene el manual siempre actualizado. Cada vez que haya un cambio aparecerá un aviso amarillo y aquí lo verás explicado en “Novedades”.',sec:'m-que'},
@@ -742,9 +787,9 @@ const MAN=[
   <tr><td>Copiar</td><td>Quieres pegar el mensaje en otro lado</td><td>Copia el texto sugerido</td></tr></tbody></table></div>`},
  {id:'m-autoriza',r:1,t:'Cuando el cliente autoriza',h:`<ul><li>Toca <b>Autorizó</b>. El monto viene con lo pendiente: <b>cámbialo por lo que realmente autorizó el cliente</b> (y la mano de obra de esa parte).</li><li>Si autorizó <b>todo</b> lo pendiente queda como <b>Total</b> y el caso se cierra como Recuperado.</li><li>Si autorizó <b>solo una parte</b>, el sistema lo registra como <b>Parcial</b> al bajar el monto: descuenta lo autorizado y <b>el resto sigue en la cartera</b> para seguir insistiendo.</li><li>Si el carro ya entró al taller, abre el caso y toca <b>Marcar en taller</b> para no volver a contactar al cliente.</li></ul>`},
  {id:'m-cartera',r:0,t:'Cartera y Caso',h:`<ul><li><b>Cartera:</b> todos los casos. Filtra por estado o busca por OT, cliente o placa. Toca una fila para abrir el caso.</li><li><b>Caso:</b> partidas pendientes, bitácora de contactos (quién, cuándo, qué pasó), el botón <b>Ver reporte con fotos y videos</b> y el enlace a Clear Mechanic.</li><li>Si un caso no tiene enlace de inspección, se avisa: falta cargar el reporte “Formas de Inspección”.</li></ul>`},
- {id:'m-semana',r:0,t:'Semana y respaldo',h:`<ul><li><b>Semana:</b> el reporte del sábado: casos asignados, contactos, autorizados, lo recuperado y el incentivo del mes. Se llena solo con lo que se registra en “Hoy”.</li><li><b>Respaldo</b> (asesor y jefe): en Semana → Respaldo, “Descargar respaldo (Excel)”. Hazlo cada sábado y guárdalo solo en tu computadora; trae datos de clientes y no debe enviarse por WhatsApp ni subirse a internet.</li></ul>`},
+ {id:'m-semana',r:0,t:'Semana y respaldo',h:`<ul><li><b>Semana:</b> el reporte del sábado: casos asignados, contactos, autorizados, lo recuperado y el incentivo del mes. Se llena solo con lo que se registra en “Hoy”.</li><li><b>Cierre mensual:</b> abajo del incentivo se ve el historial de meses cerrados (meta, porcentajes, recuperado, incentivo). El jefe de taller guarda el cierre de cada mes al terminar (idealmente con la meta y los porcentajes ya definidos para ese mes).</li><li><b>Respaldo</b> (asesor y jefe): en Semana → Respaldo, “Descargar respaldo (Excel)”. Hazlo cada sábado y guárdalo solo en tu computadora; trae datos de clientes y no debe enviarse por WhatsApp ni subirse a internet.</li></ul>`},
  {id:'m-carga',r:1,t:'Cada lunes: carga de Clear Mechanic',h:`<p>La carga normalmente la hace el <b>jefe de taller</b>, pero el asesor también puede. Son <b>dos reportes</b> de Clear Mechanic, de los <b>últimos 30 días</b>:</p><ol><li>“Reporte de Actividad – <b>Cotizaciones</b>”</li><li>“Reporte de Actividad – <b>Formas de Inspección</b>” (trae el enlace de fotos y videos de cada orden)</li></ol><ul><li>En <b>Importar Clear Mechanic</b> arrastra los dos archivos juntos (o uno por uno, en cualquier orden): el sistema reconoce cuál es cuál.</li><li>Crea los casos nuevos, detecta a los clientes que ya aprobaron y asigna a cada caso su enlace. No duplica nada ni borra lo que ya se registró.</li><li>Si en “Hoy” aparece “Última carga de Clear Mechanic hace X días”, hay que cargar los reportes.</li></ul>`},
- {id:'m-jefe',r:2,t:'Solo jefe de taller: ajustes y usuarios',h:`<ul><li><b>Semana → Ajustes:</b> casos por día, meta mensual y porcentajes del incentivo. Después de cambiar los casos por día usa “Rehacer agenda” en Hoy para aplicarlo.</li><li><b>Recuperación con descuento:</b> si el cliente autorizó todo pero se facturó con descuento y el caso sigue mostrando una diferencia pendiente, abre el caso y toca <b>Ajustar a recuperación total (descuento)</b>. El monto recuperado no cambia; la diferencia queda registrada como descuento (con tu nota en la bitácora) y el caso pasa a 100% recuperado. La ventana sugiere la diferencia exacta, con centavos. Si el caso ya tiene descuento, el botón pasa a <b>Editar descuento</b> para corregir el monto total. Para evitarlo en adelante, el asesor debe registrar en “Autorizó” el monto cotizado y dejar el descuento para el jefe.</li><li><b>Usuarios y accesos</b> (Semana → Ajustes): agregar usuarios con su rol (consulta, asesor o jefe), restablecer el PIN de alguien y desactivar un acceso. Los usuarios no se borran, solo se desactivan.</li><li>Si pasan más de 7 días sin respaldo, en “Hoy” te sale un aviso.</li></ul>`},
+ {id:'m-jefe',r:2,t:'Solo jefe de taller: ajustes y usuarios',h:`<ul><li><b>Semana → Ajustes:</b> casos por día, meta mensual y porcentajes del incentivo. Después de cambiar los casos por día usa “Rehacer agenda” en Hoy para aplicarlo.</li><li><b>Recuperación con descuento:</b> si el cliente autorizó todo pero se facturó con descuento y el caso sigue mostrando una diferencia pendiente, abre el caso y toca <b>Ajustar a recuperación total (descuento)</b>. El monto recuperado no cambia; la diferencia queda registrada como descuento (con tu nota en la bitácora) y el caso pasa a 100% recuperado. La ventana sugiere la diferencia exacta, con centavos. Si el caso ya tiene descuento, el botón pasa a <b>Editar descuento</b> para corregir el monto total. Para evitarlo en adelante, el asesor debe registrar en “Autorizó” el monto cotizado y dejar el descuento para el jefe.</li><li><b>Cierre mensual:</b> en Semana → Cierre mensual elige el mes y toca “Guardar cierre”. Se guardan la meta y los porcentajes <b>actuales</b>, lo recuperado, las autorizaciones y el incentivo que salió, para que no se pierdan si después cambias los ajustes. Si vuelves a cerrar el mismo mes, se reemplaza (pide confirmación). Primero ajusta la meta y los % del mes, luego cierra.</li><li><b>Usuarios y accesos</b> (Semana → Ajustes): agregar usuarios con su rol (consulta, asesor o jefe), restablecer el PIN de alguien y desactivar un acceso. Los usuarios no se borran, solo se desactivan.</li><li>Si pasan más de 7 días sin respaldo, en “Hoy” te sale un aviso.</li></ul>`},
  {id:'m-reglas',r:0,t:'Reglas de oro',h:`<ul><li>Registra <b>cada</b> contacto el mismo día: la bitácora es la prueba del trabajo.</li><li>Nada se cierra sin motivo: “Perdido” siempre lleva razón.</li><li>No compartas tu PIN y toca <b>Salir</b> al terminar.</li><li>Si algo se ve raro o no carga: recarga la página (Ctrl + F5 en computadora). Si sigue igual, avisa al jefe de taller con una captura.</li></ul>`}
 ];
 let manNuevas=new Set();
@@ -768,7 +813,7 @@ function renderManual(){
 /* ================= EVENTOS ================= */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec]');if(!t)return;
+  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec],#cierreGo');if(!t)return;
   if(t.id==='salir'){sess('user',null);location.reload();return}
   if(t.dataset.go)return go(t.dataset.go);
   if(t.dataset.ver){casoSel=t.dataset.ver;return go('caso')}
@@ -776,6 +821,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.copy){const c=S.casos[t.dataset.copy];try{await navigator.clipboard.writeText(mensaje(c));toast('Mensaje copiado')}catch(_){toast('No se pudo copiar: selecciona el texto')}return}
   if(t.dataset.sem){if(!canAct())return;wr(casoSel,['sem',t.dataset.sem]);return}
   if(t.id==='novX')return marcarVisto();
+  if(t.id==='cierreGo'){if(isJefe())dlgCierre();return}
   if(t.id==='manPrint')return window.print();
   if(t.dataset.sec){const e=document.getElementById(t.dataset.sec);if(e)e.scrollIntoView({behavior:'smooth',block:'start'});return}
   if(t.id==='cpin')return dlgCambiarPin(USER);
@@ -788,7 +834,7 @@ document.addEventListener('click',async e=>{
     const cfg={asesor:v('c_asesor')||'Ricardo',min:Math.max(1,+v('c_min')||2),max:Math.max(1,+v('c_max')||5),meta:+v('c_meta')||0,pct1:+v('c_pct1')||0,pct2:+v('c_pct2')||0,base:v('c_base')};if(cfg.min>cfg.max)cfg.min=cfg.max;
     try{await setDoc(doc(db,'crm_config','zona10'),cfg,{merge:true});toast('Ajustes guardados · usa “Rehacer agenda” para aplicarlos hoy')}catch(err){toast('No se pudo guardar: '+(err.code||err.message))}return}
 });
-document.addEventListener('change',e=>{if(e.target.id==='fEst'){fEst=e.target.value;renderCartera()}});
+document.addEventListener('change',e=>{if(e.target.id==='fEst'){fEst=e.target.value;renderCartera()}if(e.target.id==='cierreMes'){cierreSel=e.target.value;renderSemana()}});
 document.addEventListener('input',e=>{if(e.target.id==='fBus'){fBus=e.target.value;const p=e.target.selectionStart;renderCartera();const i=$('#fBus');i.focus();i.setSelectionRange(p,p)}});
 $('#ov').addEventListener('click',e=>{if(e.target.id==='ov')closeDlg()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDlg()});
