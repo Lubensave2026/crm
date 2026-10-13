@@ -30,7 +30,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await page.screenshot({path:path.join(out,`00-login-${tag}.png`)});
   await login(page,'Ricardo','222222');
   if(tag==='desktop'){
-    ok('aviso de novedades visible al entrar',await page.isVisible('#nov')&&/Manual de usuario dentro/.test(await page.textContent('#nov')));
+    ok('aviso de novedades visible al entrar',await page.isVisible('#nov')&&/Instala la herramienta como aplicación/.test(await page.textContent('#nov')));
     ok('punto de novedad en la pestaña Manual',await page.isVisible('#manDot'));
     await page.click('#nov [data-go="manual"]');await page.waitForTimeout(200);
     ok('manual: muestra Novedades marcadas como nuevas',/NUEVO/.test(await page.textContent('#manual')));
@@ -135,7 +135,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});ok('PIN nuevo entra',true);
   ok('el aviso no vuelve a salir si ya lo vio',!(await r.page.isVisible('#nov')));
   await r.page.evaluate(()=>localStorage.setItem('lns_crm_visto_ricardo','2026-10-09c'));await r.page.click('#salir');await r.page.waitForSelector('#lu');await r.page.click('#lu button:has-text("Ricardo")');await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});
-  ok('con una novedad nueva vuelve el aviso (+1 más)',/Manual de usuario dentro/.test(await r.page.textContent('#nov'))&&/\+1 más/.test(await r.page.textContent('#nov')));
+  ok('con novedades nuevas vuelve el aviso (+2 más)',/Instala la herramienta como aplicación/.test(await r.page.textContent('#nov'))&&/\+2 más/.test(await r.page.textContent('#nov')));
   await r.ctx.close();
   const b=await abrir({width:1280,height:900});await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
   ok('jefe: ve Ajustes',!!(await b.page.$('#cSave')));
