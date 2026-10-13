@@ -240,6 +240,38 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   ok('cierre: si ya existe, avisa que se reemplazará',/Ya existe un cierre/.test(await b.page.textContent('#dlg')));
   await b.page.click('#dCancel');
   await b.page.screenshot({path:path.join(out,'9-cierre-mensual.png'),fullPage:true});
+  // Caso marcado En taller por error: el jefe registra la recuperación
+  {
+    const otT=await b.page.evaluate(()=>Object.values(__DB.crm_casos).find(c=>['Pendiente','Rechazado'].includes(c.estado)&&c.ot!=='5399'&&c.ot!=='5381').ot);
+    await b.page.click('nav button[data-t="cartera"]');await b.page.selectOption('#fEst','Todos');await b.page.fill('#fBus',otT);await b.page.click(`tr[data-ver="${otT}"]`);
+    ok('caso abierto: no muestra la corrección de jefe',!(await b.page.$('#caso button[data-a="autorizoJ"]')));
+    await b.page.click('#caso button[data-a="taller"]');await b.page.waitForTimeout(500);
+    ok('marcado En taller (sin recuperos)',await b.page.evaluate(o=>__DB.crm_casos[o].estado==='En taller'&&!(__DB.crm_casos[o].recuperos||[]).length,otT));
+    ok('jefe: ve Registrar recuperación en un caso En taller',!!(await b.page.$('#caso button[data-a="autorizoJ"]')));
+    await b.page.click('#caso button[data-a="autorizoJ"]');await b.page.waitForTimeout(150);
+    ok('diálogo de corrección con el estado actual',/corrección del jefe/.test(await b.page.textContent('#dlg'))&&/En taller/.test(await b.page.textContent('#dlg')));
+    await b.page.fill('#aN','trajeron el vehículo hoy; el cliente sí autorizó');await b.page.click('#dOk');await b.page.waitForTimeout(600);
+    ok('queda Recuperado con el monto registrado',await b.page.evaluate(o=>{const c=__DB.crm_casos[o];return c.estado==='Recuperado'&&c.recuperos.length===1&&c.recuperos[0].tipo==='total'&&c.recuperos[0].monto>0},otT));
+    ok('bitácora: corrección del jefe (canal Sistema, no cuenta como contacto)',await b.page.evaluate(o=>__DB.crm_casos[o].bitacora.some(x=>x.canal==='Sistema'&&/Corrección del jefe/.test(x.resultado)),otT));
+    ok('ya no se ofrece la corrección',!(await b.page.$('#caso button[data-a="autorizoJ"]')));
+    await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(200);
+  }
+  // Caso En taller que ya tiene monto autorizado: solo cambiar el estado a Recuperado
+  {
+    await b.page.evaluate(()=>{__DB.crm_casos['5399'].estado='En taller';__notify()});
+    await b.page.click('nav button[data-t="cartera"]');await b.page.selectOption('#fEst','Todos');await b.page.fill('#fBus','5399');await b.page.click('tr[data-ver="5399"]');
+    ok('En taller con monto registrado: ofrece Marcar como Recuperado',!!(await b.page.$('#caso button[data-a="marcarRec"]')));
+    const antes=await b.page.evaluate(()=>JSON.stringify(__DB.crm_casos['5399'].recuperos));
+    await b.page.click('#caso button[data-a="marcarRec"]');await b.page.waitForTimeout(150);
+    ok('el diálogo muestra el recuperado y aclara que solo cambia el estado',/Solo cambia el estado/.test(await b.page.textContent('#dlg')));
+    await b.page.click('#dOk');await b.page.waitForTimeout(250);
+    ok('exige motivo',/motivo/.test(await b.page.textContent('#toast')));
+    await b.page.fill('#eN','el cliente trajo el vehículo y autorizó el 100%');await b.page.click('#dOk');await b.page.waitForTimeout(600);
+    ok('queda Recuperado sin tocar los montos',await b.page.evaluate(a=>{const c=__DB.crm_casos['5399'];return c.estado==='Recuperado'&&JSON.stringify(c.recuperos)===a},antes));
+    ok('bitácora: ajuste del jefe con el estado anterior',await b.page.evaluate(()=>__DB.crm_casos['5399'].bitacora.some(x=>/estado a Recuperado/.test(x.resultado)&&/Antes: En taller/.test(x.nota))));
+    ok('ya no se ofrece',!(await b.page.$('#caso button[data-a="marcarRec"]')));
+    await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(200);
+  }
   // Jefe agrega a Jacobo (consulta), Jacobo entra, jefe lo desactiva
   await b.page.click('#uAdd');await b.page.fill('#uN','Jacobo');await b.page.selectOption('#uR','consulta');await b.page.fill('#uP','12');await b.page.click('#dOk');await b.page.waitForTimeout(300);
   ok('usuario nuevo: exige 6 dígitos',/6 dígitos/.test(await b.page.textContent('#toast')));

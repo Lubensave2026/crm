@@ -119,4 +119,20 @@ ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
     ok('sin columna de fecha: se rechaza el archivo',(L.planImport(sinF,{},{}).error||[]).includes('fecha'),true);
   }
 }
+
+// ---- Lo registrado en la herramienta manda sobre el Excel ----
+{
+  const base={};for(const {ot,doc} of L.planImport(rows,{},{hoy:HOY,usuario:'t'}).nuevos)base[ot]=doc;
+  for(const [est,nota] of [['En taller','En taller'],['Recuperado','Recuperado'],['En negociación','En negociación'],['Perdido','Perdido']]){
+    const cs=structuredClone(base);const c=cs['5381'];c.estado=est;if(est!=='En negociación')for(const p of Object.values(c.partidas))if(p.estadoCM!=='Aprobado')p.recuperada=true;
+    const pl2=L.planImport(rows,cs,{hoy:HOY,usuario:'t'});const ch=pl2.cambios.find(x=>x.ot==='5381');
+    ok('recarga con el Excel como pendiente: no cambia el estado ('+nota+')',!ch||ch.patch.estado===undefined,true);
+    ok('recarga: lo recuperado sigue sin pendiente ('+nota+')',est==='En negociación'?L.montoCaso(c)>0:L.montoCaso(c)===0,true);
+  }
+  // Una orden nueva (otra OT) con las partidas aprobadas no crea un caso ni cuenta otra vez
+  const nueva=rows.map(r=>r.slice());const hh=rows[0].map(x=>String(x).toLowerCase());const iO=hh.findIndex(x=>x==='or #'),iE=hh.findIndex(x=>x.includes('aprobado o'));
+  for(const r of nueva)if(String(r[iO])==='5381'){r[iO]='9999';r[iE]='Aprobado por Miembro del Equipo'}
+  const pn=L.planImport(nueva,structuredClone(base),{hoy:HOY,usuario:'t'});
+  ok('orden nueva ya aprobada (otra OT): no crea caso nuevo',pn.nuevos.some(x=>x.ot==='9999'),false);
+}
 process.exit(fallos?1:0);
