@@ -6,13 +6,14 @@ export class FieldPath{constructor(...s){this.segs=s}}
 export const collection=(db,c)=>new Col(c);
 export const doc=(a,c,id)=>a.type==='col'?new Ref(a.c,'auto'+Math.random().toString(36).slice(2)):new Ref(c,id);
 export const arrayUnion=(...els)=>({__au:els});
+export const arrayRemove=(...els)=>({__ar:els});
 export const query=(col,...m)=>({type:'query',c:col.c,m});
 export const orderBy=(f,d)=>({o:[f,d]});export const limit=n=>({l:n});
 export const initializeFirestore=()=>({});
 const tbl=c=>G.__DB[c]=G.__DB[c]||{};
-const isObj=v=>v&&typeof v==='object'&&!Array.isArray(v)&&!v.__au;
-function merge(t,d){for(const k in d){const v=d[k];if(v&&v.__au){const a=t[k]||[];for(const e of v.__au)if(!a.some(x=>eq(x,e)))a.push(structuredClone(e));t[k]=a}else if(isObj(v))t[k]=merge(isObj(t[k])?t[k]:{},v);else t[k]=structuredClone(v)}return t}
-function setPath(t,segs,v){let o=t;for(let i=0;i<segs.length-1;i++)o=(o[segs[i]]=isObj(o[segs[i]])?o[segs[i]]:{});const k=segs.at(-1);if(v&&v.__au){const a=o[k]||[];for(const e of v.__au)if(!a.some(x=>eq(x,e)))a.push(structuredClone(e));o[k]=a}else o[k]=structuredClone(v)}
+const isObj=v=>v&&typeof v==='object'&&!Array.isArray(v)&&!v.__au&&!v.__ar;
+function merge(t,d){for(const k in d){const v=d[k];if(v&&v.__ar){t[k]=(t[k]||[]).filter(x=>!v.__ar.some(e=>eq(e,x)))}else if(v&&v.__au){const a=t[k]||[];for(const e of v.__au)if(!a.some(x=>eq(x,e)))a.push(structuredClone(e));t[k]=a}else if(isObj(v))t[k]=merge(isObj(t[k])?t[k]:{},v);else t[k]=structuredClone(v)}return t}
+function setPath(t,segs,v){let o=t;for(let i=0;i<segs.length-1;i++)o=(o[segs[i]]=isObj(o[segs[i]])?o[segs[i]]:{});const k=segs.at(-1);if(v&&v.__ar){o[k]=(o[k]||[]).filter(x=>!v.__ar.some(e=>eq(e,x)))}else if(v&&v.__au){const a=o[k]||[];for(const e of v.__au)if(!a.some(x=>eq(x,e)))a.push(structuredClone(e));o[k]=a}else o[k]=structuredClone(v)}
 function snapOf(L){
   const T=tbl(L.c);let ids=Object.keys(T);
   if(L.type==='query'){const o=L.m.find(x=>x.o)?.o,lim=L.m.find(x=>x.l)?.l;if(o)ids.sort((a,b)=>String(T[b][o[0]]).localeCompare(String(T[a][o[0]])));if(lim)ids=ids.slice(0,lim)}

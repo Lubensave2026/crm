@@ -8,8 +8,8 @@ const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
 const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt}')(HOY);
-const xlsx=fs.readdirSync(path.join(dir,'..','referencia')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
-const wb=XLSX.read(fs.readFileSync(path.join(dir,'..','referencia',xlsx)),{type:'buffer',cellDates:true});
+const xlsx=fs.readdirSync(path.join(dir,'fixtures')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
+const wb=XLSX.read(fs.readFileSync(path.join(dir,'fixtures',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
 let fallos=0;const ok=(n,v,e)=>{const b=v===e;if(!b)fallos++;console.log((b?'OK  ':'FALLA')+' '+n+': '+v+(b?'':'  (esperado '+e+')'))};
 
@@ -48,9 +48,9 @@ ok('respaldo: pendiente suma = cartera',Math.round(H.Cartera.filter(r=>!['Recupe
 ok('plural 1',L.pl(1,'caso','casos'),'1 caso');ok('plural 2',L.pl(2,'caso','casos'),'2 casos');
 
 // ---- Enlaces de inspección (Formas de Inspección) ----
-const fx=fs.readdirSync(path.join(dir,'..','referencia')).find(f=>/Formas.*\.xlsx$/.test(f)&&!f.startsWith('~'));
+const fx=fs.readdirSync(path.join(dir,'fixtures')).find(f=>/Formas.*\.xlsx$/.test(f)&&!f.startsWith('~'));
 if(fx){
-  const wb2=XLSX.read(fs.readFileSync(path.join(dir,'..','referencia',fx)),{type:'buffer',cellDates:true});
+  const wb2=XLSX.read(fs.readFileSync(path.join(dir,'fixtures',fx)),{type:'buffer',cellDates:true});
   const rowsE=XLSX.utils.sheet_to_json(wb2.Sheets[wb2.SheetNames[0]],{header:1,raw:true});
   ok('tipo: cotizaciones',L.tipoReporte(rows),'cotizaciones');ok('tipo: enlaces',L.tipoReporte(rowsE),'enlaces');
   const e1=L.planEnlaces(rowsE,{});
@@ -63,7 +63,7 @@ if(fx){
   const ab=Object.values(casos).filter(L.abierto);
   ok('casos abiertos con enlace',ab.filter(c=>e1.cambios[c.ot]).length,ab.length-2);
   ok('respaldo trae el enlace',L.filasRespaldo(casos,e1.cambios).Cartera.filter(r=>r['Enlace de inspección']).length,ab.length-2+Object.values(casos).filter(c=>!L.abierto(c)&&e1.cambios[c.ot]).length);
-  const raro=rowsE.map(r=>r.slice());raro[1][12]='javascript:alert(1)';
+  const raro=rowsE.map(r=>r.slice());const iU=raro[0].findIndex(h=>String(h).toLowerCase().includes('orden digital')),iR=raro.findIndex((r,i)=>i>0&&r[0]);raro[iR][iU]='javascript:alert(1)';
   ok('rechaza enlaces que no son https',L.planEnlaces(raro,{}).stats.invalidos,1);
   ok('error si falta Orden digital',L.planEnlaces([['OR #','Nombre']],{}).error[0],'Orden digital');
 }

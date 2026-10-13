@@ -5,11 +5,11 @@ import fs from 'node:fs';import path from 'node:path';import crypto from 'node:c
 import {fileURLToPath,pathToFileURL} from 'node:url';
 const dir=path.dirname(fileURLToPath(import.meta.url)),root=path.join(dir,'..'),out=path.join(dir,'out');
 fs.mkdirSync(out,{recursive:true});
-const xlsx=path.join(root,'referencia',fs.readdirSync(path.join(root,'referencia')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f)));
+const xlsx=path.join(root,'tests','fixtures',fs.readdirSync(path.join(root,'tests','fixtures')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f)));
 const htmlApp=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const nov=[...htmlApp.matchAll(/\{id:'(\d{4}-\d{2}-\d{2}[a-z])',fecha:'[^']+',titulo:'([^']+)'/g)].map(m=>({id:m[1],titulo:m[2]}));
 const novMasReciente=nov[0].titulo,novTrasVista=nov.filter(n=>n.id>'2026-10-09c').length-1;
-const formas=path.join(root,'referencia',fs.readdirSync(path.join(root,'referencia')).find(f=>/Formas.*xlsx$/.test(f)&&!f.startsWith('~')));
+const formas=path.join(root,'tests','fixtures',fs.readdirSync(path.join(root,'tests','fixtures')).find(f=>/Formas.*xlsx$/.test(f)&&!f.startsWith('~')));
 const user=(id,nombre,rol,pin)=>{const sal='s'+id;return {nombre,rol,sal,pinHash:crypto.createHash('sha256').update(sal+':'+id+':'+pin).digest('hex')}};
 const seed={crm_usuarios:{byron:user('byron','Byron','jefe','111111'),ricardo:user('ricardo','Ricardo','asesor','222222'),mario:user('mario','Mario','consulta','333333')},crm_config:{zona10:{min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'}}};
 let fallos=0;const ok=(n,v)=>{if(!v)fallos++;console.log((v?'OK  ':'FALLA')+' '+n)};
@@ -183,6 +183,34 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   ok('editar: guarda el nuevo monto con centavos y deja bitácora con el anterior',await b.page.evaluate(d=>{const c=__DB.crm_casos['5399'];return c.descuento===Math.round((d-100.25)*100)/100&&c.bitacora.some(x=>/descuento corregido/.test(x.resultado)&&/antes/.test(x.nota))},dif));
   await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(250);
   ok('Semana: fila de Descuentos aplicados',/Descuentos aplicados\s*Q/.test(await b.page.textContent('#semana')));
+  // Caso que ya estaba autorizado: la importación lo detecta como recuperado y el jefe lo quita
+  {
+    const XL=(await import('xlsx')).default;
+    const wbx=XL.read(fs.readFileSync(xlsx),{type:'buffer',cellDates:true});const rowsx=XL.utils.sheet_to_json(wbx.Sheets[wbx.SheetNames[0]],{header:1,raw:true});
+    const hh=rowsx[0].map(x=>String(x).toLowerCase());const iO=hh.findIndex(x=>x==='or #'),iE=hh.findIndex(x=>x.includes('aprobado o')),iT=hh.findIndex(x=>x==='tipo'),iTot=hh.findIndex(x=>x.startsWith('cotizaci')&&x.endsWith('total'));
+    for(const r of rowsx)if(String(r[iO])==='5381'&&/total/i.test(String(r[iT]))&&(+r[iTot]||0)>0&&!/aprob/i.test(String(r[iE]||'')))r[iE]='Aprobado por Miembro del Equipo';
+    const wb2=XL.utils.book_new();XL.utils.book_append_sheet(wb2,XL.utils.aoa_to_sheet(rowsx,{cellDates:true}),'h');
+    await b.page.click('nav button[data-t="importar"]');
+    const bufMod=XL.write(wb2,{type:'buffer',bookType:'xlsx',cellDates:true});
+    await b.page.setInputFiles('#file',{name:'Cotizaciones-modificado.xlsx',mimeType:'application/octet-stream',buffer:bufMod});
+    await b.page.waitForSelector('#kCart',{timeout:60000});await b.page.waitForTimeout(800);
+    ok('importación detecta partidas aprobadas como recuperos de Clear Mechanic',await b.page.evaluate(()=>__DB.crm_casos['5381'].recuperos.some(r=>r.tipo==='clear-mechanic')));
+    await b.page.click('nav button[data-t="cartera"]');await b.page.selectOption('#fEst','Todos');await b.page.fill('#fBus','5381');await b.page.click('tr[data-ver="5381"]');
+    ok('jefe: ve la opción de quitar de lo recuperado',!!(await b.page.$('#caso button[data-a="yaaut"]')));
+    await b.page.click('#caso button[data-a="yaaut"]');await b.page.waitForTimeout(150);
+    ok('quitar: avisa cuánto se quita',/Se quitar/.test(await b.page.textContent('#dlg')));
+    await b.page.click('#dOk');await b.page.waitForTimeout(250);
+    ok('quitar: exige el motivo',/motivo/.test(await b.page.textContent('#toast')));
+    await b.page.fill('#yN','el cliente ya había autorizado antes de la carga inicial');await b.page.click('#dOk');await b.page.waitForTimeout(600);
+    ok('quitar: se retiran los recuperos de Clear Mechanic',await b.page.evaluate(()=>!__DB.crm_casos['5381'].recuperos.some(r=>r.tipo==='clear-mechanic')));
+    ok('quitar: las partidas quedan aprobadas y ya no figuran como recuperadas',await b.page.evaluate(()=>Object.values(__DB.crm_casos['5381'].partidas).filter(p=>p.estadoCM==='Aprobado').every(p=>!p.recuperada)));
+    ok('quitar: bitácora con la nota y el usuario',await b.page.evaluate(()=>__DB.crm_casos['5381'].bitacora.some(x=>/ya estaba autorizado/.test(x.resultado)&&x.usuario==='Byron'&&/carga inicial/.test(x.nota))));
+    ok('quitar: el caso Recuperado pasa a En taller',await b.page.evaluate(()=>__DB.crm_casos['5381'].estado==='En taller'));
+    ok('quitar: desaparece el botón',!(await b.page.$('#caso button[data-a="yaaut"]')));
+    await b.page.click('nav button[data-t="importar"]');await b.page.setInputFiles('#file',{name:'Cotizaciones-modificado.xlsx',mimeType:'application/octet-stream',buffer:bufMod});await b.page.waitForSelector('#kCart');await b.page.waitForTimeout(800);
+    ok('volver a cargar el mismo reporte no lo cuenta otra vez como recuperado',await b.page.evaluate(()=>!__DB.crm_casos['5381'].recuperos.some(r=>r.tipo==='clear-mechanic')));
+    await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(200);
+  }
   // Cierre mensual (jefe)
   const mesAct=new Date().toLocaleDateString('en-CA',{timeZone:'America/Guatemala'}).slice(0,7);
   ok('cierre: el jefe ve el selector y el botón',!!(await b.page.$('#cierreMes'))&&!!(await b.page.$('#cierreGo')));
