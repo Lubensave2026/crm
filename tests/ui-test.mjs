@@ -6,6 +6,9 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 const dir=path.dirname(fileURLToPath(import.meta.url)),root=path.join(dir,'..'),out=path.join(dir,'out');
 fs.mkdirSync(out,{recursive:true});
 const xlsx=path.join(root,'referencia',fs.readdirSync(path.join(root,'referencia')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f)));
+const htmlApp=fs.readFileSync(path.join(root,'index.html'),'utf8');
+const nov=[...htmlApp.matchAll(/\{id:'(\d{4}-\d{2}-\d{2}[a-z])',fecha:'[^']+',titulo:'([^']+)'/g)].map(m=>({id:m[1],titulo:m[2]}));
+const novMasReciente=nov[0].titulo,novTrasVista=nov.filter(n=>n.id>'2026-10-09c').length-1;
 const formas=path.join(root,'referencia',fs.readdirSync(path.join(root,'referencia')).find(f=>/Formas.*xlsx$/.test(f)&&!f.startsWith('~')));
 const user=(id,nombre,rol,pin)=>{const sal='s'+id;return {nombre,rol,sal,pinHash:crypto.createHash('sha256').update(sal+':'+id+':'+pin).digest('hex')}};
 const seed={crm_usuarios:{byron:user('byron','Byron','jefe','111111'),ricardo:user('ricardo','Ricardo','asesor','222222'),mario:user('mario','Mario','consulta','333333')},crm_config:{zona10:{min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'}}};
@@ -30,7 +33,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await page.screenshot({path:path.join(out,`00-login-${tag}.png`)});
   await login(page,'Ricardo','222222');
   if(tag==='desktop'){
-    ok('aviso de novedades visible al entrar',await page.isVisible('#nov')&&/Instala la herramienta como aplicación/.test(await page.textContent('#nov')));
+    ok('aviso de novedades visible al entrar',await page.isVisible('#nov')&&(await page.textContent('#nov')).includes(novMasReciente));
     ok('punto de novedad en la pestaña Manual',await page.isVisible('#manDot'));
     await page.click('#nov [data-go="manual"]');await page.waitForTimeout(200);
     ok('manual: muestra Novedades marcadas como nuevas',/NUEVO/.test(await page.textContent('#manual')));
@@ -97,6 +100,8 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('respaldo: nombre con fecha',/^CRM_LNS_Respaldo_\d{4}-\d{2}-\d{2}\.xlsx$/.test(dl.suggestedFilename()));
     ok('respaldo: se anota en crm_config',await page.evaluate(()=>__DB.crm_config.zona10.ultimoRespaldo?.por==='Ricardo'));
     ok('respaldo: la pantalla muestra el último respaldo',/Último respaldo/.test(await page.textContent('#bkInfo')));
+    await page.click('nav button[data-t="cartera"]');await page.fill('#fBus','5399');await page.click('tr[data-ver="5399"]');
+    ok('asesor: sin opción de ajustar por descuento',!(await page.$('#caso button[data-a="descuento"]')));
     // Hoy: registrar "Sin respuesta" en el primer caso
     await page.click('nav button[data-t="hoy"]');await page.waitForTimeout(200);
     const antesH=await page.evaluate(()=>Object.values(__DB.crm_casos).filter(c=>c.resHoy).length);
@@ -135,7 +140,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});ok('PIN nuevo entra',true);
   ok('el aviso no vuelve a salir si ya lo vio',!(await r.page.isVisible('#nov')));
   await r.page.evaluate(()=>localStorage.setItem('lns_crm_visto_ricardo','2026-10-09c'));await r.page.click('#salir');await r.page.waitForSelector('#lu');await r.page.click('#lu button:has-text("Ricardo")');await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});
-  ok('con novedades nuevas vuelve el aviso (+2 más)',/Instala la herramienta como aplicación/.test(await r.page.textContent('#nov'))&&/\+2 más/.test(await r.page.textContent('#nov')));
+  ok('con novedades nuevas vuelve el aviso (+'+novTrasVista+' más)',(await r.page.textContent('#nov')).includes(novMasReciente)&&(await r.page.textContent('#nov')).includes('(+'+novTrasVista+' más)'));
   await r.ctx.close();
   const b=await abrir({width:1280,height:900});await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
   ok('jefe: ve Ajustes',!!(await b.page.$('#cSave')));
@@ -144,6 +149,28 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await b.page.click('nav button[data-t="hoy"]');await b.page.waitForTimeout(300);ok('jefe: aviso de respaldo en Hoy cuando no hay',/respaldo/i.test(await b.page.textContent('#hoy')));
   await b.page.click('nav button[data-t="semana"]');
   await b.page.screenshot({path:path.join(out,'6-semana-jefe.png'),fullPage:true});
+  // Jefe: ajustar un caso con descuento (recuperó parcial, el cliente autorizó todo con descuento)
+  await b.page.click('nav button[data-t="cartera"]');await b.page.fill('#fBus','5399');await b.page.click('tr[data-ver="5399"]');
+  ok('jefe: sin botón de descuento si no hay recuperación registrada',!(await b.page.$('#caso button[data-a="descuento"]')));
+  await b.page.click('#caso button[data-a="autorizo"]');await b.page.fill('#aM','5000');await b.page.click('#dOk');await b.page.waitForTimeout(500);
+  ok('jefe: aparece el botón de descuento tras un recupero parcial',!!(await b.page.$('#caso button[data-a="descuento"]')));
+  await b.page.click('#caso button[data-a="descuento"]');await b.page.waitForTimeout(150);await b.page.screenshot({path:path.join(out,'8a-descuento-dialogo.png')});
+  const dif=Number(await b.page.inputValue('#dM'));
+  ok('descuento sugerido = cotizado − recuperado',await b.page.evaluate(d=>{const c=__DB.crm_casos['5399'];const base=Object.values(c.partidas).filter(p=>p.estadoCM!=='Aprobado').reduce((a,p)=>a+p.total,0);return d===Math.round(base-c.recuperos.reduce((a,r)=>a+r.monto,0))},dif));
+  await b.page.fill('#dM',String(dif+500));await b.page.click('#dOk');await b.page.waitForTimeout(250);
+  ok('descuento: no puede superar la diferencia',/no puede ser mayor/.test(await b.page.textContent('#toast')));
+  await b.page.fill('#dM',String(dif));await b.page.click('#dOk');await b.page.waitForTimeout(250);
+  ok('descuento: exige motivo',/motivo/.test(await b.page.textContent('#toast')));
+  await b.page.fill('#dN','15% de descuento al facturar');await b.page.click('#dOk');await b.page.waitForTimeout(600);
+  ok('descuento guardado, partidas cerradas y caso Recuperado',await b.page.evaluate(d=>{const c=__DB.crm_casos['5399'];return c.descuento===d&&c.estado==='Recuperado'&&Object.values(c.partidas).filter(p=>p.estadoCM!=='Aprobado').every(p=>p.recuperada)},dif));
+  ok('descuento: el monto recuperado no cambió (Q5,000)',await b.page.evaluate(()=>__DB.crm_casos['5399'].recuperos.reduce((a,r)=>a+r.monto,0)===5000));
+  ok('descuento: bitácora con el ajuste y el usuario',await b.page.evaluate(()=>__DB.crm_casos['5399'].bitacora.some(x=>/Ajuste del jefe/.test(x.resultado)&&x.usuario==='Byron'&&/15% de descuento/.test(x.nota))));
+  const cs=await b.page.textContent('#caso');
+  ok('caso muestra Recuperado al 100% con descuento y pendiente Q0',/Recuperado al 100% · descuento/.test(cs)&&/Pendiente por recuperar\s*Q0\s*Q0/.test(cs));
+  await b.page.screenshot({path:path.join(out,'8b-caso-descuento.png'),fullPage:true});
+  ok('el botón de descuento desaparece al quedar en 0',!(await b.page.$('#caso button[data-a="descuento"]')));
+  await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(250);
+  ok('Semana: fila de Descuentos aplicados',/Descuentos aplicados\s*Q/.test(await b.page.textContent('#semana')));
   // Jefe agrega a Jacobo (consulta), Jacobo entra, jefe lo desactiva
   await b.page.click('#uAdd');await b.page.fill('#uN','Jacobo');await b.page.selectOption('#uR','consulta');await b.page.fill('#uP','12');await b.page.click('#dOk');await b.page.waitForTimeout(300);
   ok('usuario nuevo: exige 6 dígitos',/6 dígitos/.test(await b.page.textContent('#toast')));

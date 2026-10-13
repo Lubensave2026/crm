@@ -302,7 +302,7 @@ function filasRespaldo(casos,enlaces){
   const H={Cartera:[],Partidas:[],'Bitácora':[],Recuperos:[]};
   for(const c of cs){
     const sg=c.seg||{};
-    H.Cartera.push({OT:c.ot,Cliente:c.cliente,'Móvil':c.movil,'Vehículo':c.vehiculo,Placa:c.placa,'Enlace de inspección':(enlaces||{})[c.ot]||'',Km:c.km?+c.km:'','Fecha cotización':c.fecha,'Días':dias(c),Urgencia:SEMAF[c.sem]||'',Estado:c.estado,'Próximo contacto':c.proximo||'','Motivo de pérdida':c.motivo||'','Pendiente Q':r2(montoCaso(c)),'M.O. pendiente Q':r2(moCaso(c)),'Seg. 48 h':sg.s48?'Sí':'No','Seg. 7 d':sg.s7?'Sí':'No','Seg. 30 d':sg.s30?'Sí':'No','Actualizado por':c.actualizadoPor||'','Actualizado':c.actualizado||''});
+    H.Cartera.push({OT:c.ot,Cliente:c.cliente,'Móvil':c.movil,'Vehículo':c.vehiculo,Placa:c.placa,'Enlace de inspección':(enlaces||{})[c.ot]||'',Km:c.km?+c.km:'','Fecha cotización':c.fecha,'Días':dias(c),Urgencia:SEMAF[c.sem]||'',Estado:c.estado,'Próximo contacto':c.proximo||'','Motivo de pérdida':c.motivo||'','Pendiente Q':r2(montoCaso(c)),'M.O. pendiente Q':r2(moCaso(c)),'Descuento Q':r2(c.descuento||0),'Seg. 48 h':sg.s48?'Sí':'No','Seg. 7 d':sg.s7?'Sí':'No','Seg. 30 d':sg.s30?'Sí':'No','Actualizado por':c.actualizadoPor||'','Actualizado':c.actualizado||''});
     for(const p of Object.values(c.partidas))H.Partidas.push({OT:c.ot,Cliente:c.cliente,'Punto de inspección':p.punto,'Estado Clear Mechanic':p.estadoCM,'Recuperada':p.recuperada?'Sí':'No','M.O. Q':r2(p.mo),'Total Q':r2(p.total),'Fecha CM':p.fechaCM||''});
     for(const b of [...(c.bitacora||[])].sort((a,b)=>(a.ts||0)-(b.ts||0)))H['Bitácora'].push({Fecha:b.fecha,OT:c.ot,Cliente:c.cliente,Canal:b.canal,Resultado:b.resultado,Nota:b.nota||'',Usuario:b.usuario||''});
     for(const r of (c.recuperos||[]))H.Recuperos.push({Fecha:r.fecha,OT:c.ot,Cliente:c.cliente,'Monto Q':r2(r.monto),'M.O. Q':r2(r.mo),Tipo:r.tipo,Usuario:r.usuario||''});
@@ -398,6 +398,7 @@ function accion(ot,tipo){
   if(tipo==='enviado'){const p=[...stagePairs(c),'bitacora',arrayUnion(ent('WhatsApp','Mensaje enviado'))];if(c.estado==='Pendiente'||c.estado==='Rechazado')p.push('estado','Sin respuesta');wr(ot,p).then(k=>k&&toast('Contacto registrado'));return}
   if(tipo==='sinresp'){wr(ot,[...stagePairs(c),'estado','Sin respuesta','proximo',addDays(TODAY,3),'bitacora',arrayUnion(ent('WhatsApp','Sin respuesta','Reintento en 3 días')),...hoy('Sin respuesta')]).then(k=>k&&toast('Reintento programado en 3 días'));return}
   if(tipo==='negocia'){wr(ot,[...stagePairs(c),'estado','En negociación','bitacora',arrayUnion(ent('Llamada','En negociación')),...hoy('En negociación')]);return}
+  if(tipo==='descuento'){if(isJefe())dlgDescuento(c);return}
   if(tipo==='autorizo')return dlgAutorizo(c);
   if(tipo==='repro')return dlgRepro(c);
   if(tipo==='perdido')return dlgPerdido(c);
@@ -424,6 +425,26 @@ function dlgAutorizo(c){
   const sync=()=>{const v=+aM.value||0;if(v>0&&v<pend){aT.value='parcial';hint.textContent='Monto menor al pendiente: se registra como Parcial y el resto ('+Q(pend-v)+') sigue en la cartera.'}else if(v>=pend){aT.value='total';hint.textContent='Cubre todo lo pendiente: el caso se cierra como Recuperado.'}};
   aM.addEventListener('input',sync);
   aT.addEventListener('change',()=>{if(aT.value==='total'){aM.value=pend;aMO.value=Math.round(mo);hint.textContent='Cubre todo lo pendiente: el caso se cierra como Recuperado.'}else if((+aM.value||0)>=pend)aM.value='';});
+}
+/* Solo jefe: el cliente autorizó todo pero se facturó con descuento. El monto recuperado no cambia; la diferencia queda como descuento. */
+const baseCotizada=c=>Object.values(c.partidas).filter(p=>p.estadoCM!=='Aprobado').reduce((a,p)=>a+p.total,0);
+const pctDesc=c=>{const b=baseCotizada(c);return b?Math.round((c.descuento||0)/b*100):0};
+function dlgDescuento(c){
+  const base=baseCotizada(c),rec=(c.recuperos||[]).reduce((a,r)=>a+(r.monto||0),0),ya=c.descuento||0,dif=Math.max(0,Math.round(base-rec-ya));
+  openDlg(`<h2>Ajustar a recuperación total · OT ${esc(c.ot)}</h2>
+   <p class="sm">Cotizado (no aprobado en Clear Mechanic): <b>${Q(base)}</b> · Recuperado registrado: <b>${Q(rec)}</b>${ya?' · Descuento ya registrado: <b>'+Q(ya)+'</b>':''}</p>
+   <p class="sm">Úsalo cuando el cliente autorizó todo pero se facturó con descuento. El monto recuperado <b>no cambia</b>; la diferencia queda como <b>descuento</b> y el caso pasa a 100% recuperado (pendiente Q0).</p>
+   <label>Descuento aplicado (Q)<input id="dM" type="number" min="0" value="${dif}"></label>
+   <label>Motivo / nota (obligatorio)<input id="dN" placeholder="Ej.: 15% de descuento al facturar"></label>`,()=>{
+    const m=Math.round((+$('#dM').value||0)*100)/100,nota=$('#dN').value.trim();
+    if(m<=0){toast('Escribe el monto del descuento');return false}
+    if(m>dif+1){toast('El descuento no puede ser mayor a la diferencia ('+Q(dif)+')');return false}
+    if(!nota){toast('Escribe el motivo del descuento');return false}
+    const p=['descuento',Math.round((ya+m)*100)/100,'bitacora',arrayUnion(ent('Sistema','Ajuste del jefe: recuperación total','Descuento '+Q(m)+' ('+(base?Math.round(m/base*100):0)+'%) · '+nota))];
+    for(const [k,x] of Object.entries(c.partidas))if(x.estadoCM!=='Aprobado'&&!x.recuperada)p.push(new FieldPath('partidas',k,'recuperada'),true);
+    if(abierto(c))p.push('estado','Recuperado');
+    wr(c.ot,p).then(k=>k&&toast('Caso ajustado: recuperado al 100% con descuento de '+Q(m)));
+  });
 }
 function dlgRepro(c){openDlg(`<h2>Reprogramar · OT ${esc(c.ot)}</h2><label>Próximo contacto<input id="rD" type="date" value="${addDays(TODAY,7)}"></label><label>Nota<input id="rN" placeholder="Ej.: cobra en quincena"></label>`,()=>{const d=$('#rD').value;if(!d){toast('Elige la fecha');return false}
   wr(c.ot,[...stagePairs(c),'estado','Reprogramado','proximo',d,'bitacora',arrayUnion(ent('WhatsApp','Reprogramado','Para '+fmtD(d)+' · '+$('#rN').value)),'resHoy',TODAY+'|Reprogramado'])})}
@@ -510,12 +531,12 @@ async function descargarRespaldo(){
   const resumen=[['Respaldo CRM Lube N Save Zona 10'],['Generado',TODAY+' por '+USER.nombre],[],
     ['Casos en total',Object.keys(S.casos).length],['Casos abiertos',ab.length],['Cartera dormida Q',r2(ab.reduce((a,c)=>a+montoCaso(c),0))],
     ['Recuperado total Q',r2(Object.values(S.casos).reduce((a,c)=>a+(c.recuperos||[]).reduce((x,r)=>x+r.monto,0),0))],
-    ['Recuperado de la semana Q',r2(sm.monto)],['Recuperado del mes Q',r2(ms.monto)],['Base del incentivo del mes Q',r2(base)],['Incentivo del mes Q',r2(incentivo(base))],
+    ['Descuentos aplicados Q',r2(Object.values(S.casos).reduce((a,c)=>a+(c.descuento||0),0))],['Recuperado de la semana Q',r2(sm.monto)],['Recuperado del mes Q',r2(ms.monto)],['Base del incentivo del mes Q',r2(base)],['Incentivo del mes Q',r2(incentivo(base))],
     ['Última importación',S.imports[0]?S.imports[0].fecha+' ('+(S.imports[0].archivo||'')+')':'—']];
   const wb=XLSX.utils.book_new();
   const add=(n,ws,w)=>{ws['!cols']=w.map(x=>({wch:x}));XLSX.utils.book_append_sheet(wb,ws,n)};
   add('Resumen',XLSX.utils.aoa_to_sheet(resumen),[30,46]);
-  add('Cartera',XLSX.utils.json_to_sheet(H.Cartera),[8,26,12,24,10,36,9,14,7,12,15,15,24,12,14,9,9,9,14,24]);
+  add('Cartera',XLSX.utils.json_to_sheet(H.Cartera),[8,26,12,24,10,36,9,14,7,12,15,15,24,12,14,12,9,9,9,14,24]);
   add('Partidas',XLSX.utils.json_to_sheet(H.Partidas),[8,26,46,20,11,10,10,12]);
   add('Bitácora',XLSX.utils.json_to_sheet(H['Bitácora']),[12,8,26,16,34,40,12]);
   add('Recuperos',XLSX.utils.json_to_sheet(H.Recuperos),[12,8,26,12,10,16,12]);
@@ -615,7 +636,7 @@ function renderCaso(){
   if(!c){el.innerHTML=`<div class="empty"><b>Selecciona un caso</b>Ábrelo desde la agenda de hoy o desde la cartera.</div>`;return}
   const parts=Object.values(c.partidas).sort((a,b)=>b.total-a.total),A=canAct();
   el.innerHTML=`<div class="row"><div><h1>OT ${esc(c.ot)} · ${esc(c.cliente)}</h1><p class="lead">${esc(c.vehiculo)} · ${esc(c.placa)}${c.km?' · '+(+c.km).toLocaleString('es-GT')+' km':''} · cotizado ${fmtD(c.fecha)} · Tel. ${esc(c.movil||'—')}</p></div><button class="btn" data-go="cartera">← Cartera</button></div>
-  <div class="chips">${chipsCaso(c)}</div>
+  <div class="chips">${chipsCaso(c)}${c.descuento?`<span class="chip g">Recuperado al 100% · descuento ${Q(c.descuento)} (${pctDesc(c)}%)</span>`:''}</div>
   <div class="grid2"><div class="panel"><h2>Partidas</h2>
    <div class="tw" style="border:0"><table><thead><tr><th>Punto de inspección</th><th>Clear Mechanic</th><th style="text-align:right">M.O.</th><th style="text-align:right">Total</th></tr></thead><tbody>
    ${parts.map(p=>`<tr class="${p.estadoCM==='Aprobado'||p.recuperada?'done':''}"><td>${esc(p.punto)}</td><td>${p.recuperada?'Recuperada':esc(p.estadoCM)}</td><td class="n">${Q(p.mo)}</td><td class="n">${Q(p.total)}</td></tr>`).join('')}
@@ -623,8 +644,9 @@ function renderCaso(){
    <h2>Bitácora de contactos</h2><div class="tl">${(c.bitacora||[]).slice().sort((a,b)=>(b.ts||0)-(a.ts||0)||(b.fecha||'').localeCompare(a.fecha||'')).map(b=>`<div><b>${fmtD(b.fecha)}</b><span>${esc(b.canal)}</span><span>${esc(b.resultado)}${b.nota?' · '+esc(b.nota):''}${b.usuario?' · <i>'+esc(b.usuario)+'</i>':''}</span></div>`).join('')||'<p class="sm">Sin contactos registrados.</p>'}</div></div>
   <div class="panel"><h2>Urgencia</h2><div class="sem3" id="sem3">${['rojo','amarillo','verde'].map(s=>`<button class="${s}" aria-pressed="${c.sem===s}" ${A?`data-sem="${s}"`:'disabled'}>${{rojo:'Crítico',amarillo:'Preventivo',verde:'Vigilar'}[s]}</button>`).join('')}</div>
    <h2>Seguimientos</h2><div class="chips">${STAGES.map(s=>`<span class="chip ${c.seg[s.k]?'g':dias(c)>=s.d&&abierto(c)?'r':''}">${s.l}${c.seg[s.k]?' ✓':''}</span>`).join('')}</div>
-   <h2>Mensaje sugerido</h2><div class="msg">${esc(mensaje(c))}</div>
+   ${abierto(c)?`<h2>Mensaje sugerido</h2><div class="msg">${esc(mensaje(c))}</div>`:''}
    ${abierto(c)?(A?`<div class="acts">${wa(c)?`<a class="btn k1" href="${wa(c)}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="negocia" data-ot="${c.ot}">En negociación</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button></div>`:''):`<p class="sm">Caso cerrado: <b>${esc(c.estado)}</b>${c.motivo?' · '+esc(c.motivo):''}</p>`}
+   ${isJefe()&&(c.recuperos||[]).length&&montoCaso(c)>0?`<div class="acts"><button class="btn" data-a="descuento" data-ot="${c.ot}">Ajustar a recuperación total (descuento)</button></div><p class="note">Solo jefe: úsalo si el cliente autorizó todo pero se facturó con descuento.</p>`:''}
    <h2>Enlaces</h2>${enlaceDe(c)?'':'<p class="note">Este caso no tiene enlace de inspección: carga el reporte “Formas de Inspección” en Importar.</p>'}<div class="acts">${verRep(c,'Ver reporte con fotos y videos','btn k1')}<a class="btn" href="https://lubensavezona10.clearmechanic.com/dashboard/orders" target="_blank" rel="noopener">Clear Mechanic</a>${abierto(c)&&A?`<button class="btn" data-a="taller" data-ot="${c.ot}">Marcar en taller</button>`:''}</div>
   </div></div>`;
 }
@@ -644,7 +666,7 @@ function renderSemana(){
   const tot=rows.reduce((a,[,v])=>({asig:a.asig+v.asig,cont:a.cont+v.cont,aut:a.aut+v.aut,monto:a.monto+v.monto}),{asig:0,cont:0,aut:0,monto:0});
   const all=Object.values(S.casos),cot=all.reduce((a,c)=>a+Object.values(c.partidas).filter(p=>p.estadoCM!=='Aprobado'||p.recuperada).reduce((x,p)=>x+p.total,0),0);
   const rec=all.reduce((a,c)=>a+(c.recuperos||[]).reduce((x,r)=>x+r.monto,0),0),dorm=all.filter(abierto).reduce((a,c)=>a+montoCaso(c),0);
-  const pct=x=>cot?Math.round(x/cot*100):0;
+  const pct=x=>cot?Math.round(x/cot*100):0;const desc=all.reduce((a,c)=>a+(c.descuento||0),0);
   el.innerHTML=`<div><h1>Reporte del sábado</h1><p class="lead">Semana del ${fmtD(s.ws)} al ${fmtD(addDays(s.ws,5))}. Se llena solo con lo que se registra en “Hoy”.</p></div>
   <div class="kpis"><div class="k"><div class="l">Casos asignados</div><div class="v">${tot.asig}</div><div class="n">${S.cfg.min}–${S.cfg.max} por día</div></div>
    <div class="k"><div class="l">Contactos</div><div class="v">${tot.cont}</div><div class="n">registrados en bitácora</div></div>
@@ -656,6 +678,7 @@ function renderSemana(){
   <div class="grid2"><div class="panel"><h2>Embudo de la cartera</h2>
    <div class="fun"><span>No aprobado en CM</span><div class="bar"><i style="width:100%"></i></div><span class="money">${Q(cot)}</span></div>
    <div class="fun"><span>Recuperado</span><div class="bar"><i class="y" style="width:${pct(rec)}%"></i></div><span class="money">${Q(rec)}</span></div>
+   ${desc?`<div class="fun"><span>Descuentos aplicados</span><div class="bar"><i style="width:${pct(desc)}%"></i></div><span class="money">${Q(desc)}</span></div>`:''}
    <div class="fun"><span>Sigue dormido</span><div class="bar"><i style="width:${pct(dorm)}%"></i></div><span class="money">${Q(dorm)}</span></div></div>
   <div class="panel"><h2>Incentivo de ${esc(S.cfg.asesor)} · mes en curso</h2>
    <p class="sm">Base: ${S.cfg.base==='mo'?'mano de obra recuperada':'monto recuperado'} del mes · ${S.cfg.pct1}% hasta la meta de ${Q(S.cfg.meta)} y ${S.cfg.pct2}% sobre el excedente.</p>
@@ -693,6 +716,7 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manu
    Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
    (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
 const NOVEDADES=[
+ {id:'2026-10-13b',fecha:'2026-10-13',titulo:'Jefe de taller: ajustar un caso con descuento',texto:'Si el cliente autorizó todo pero se facturó con descuento y quedó una diferencia pendiente, el jefe puede ajustar el caso a 100% recuperado desde el caso. El descuento queda registrado y se ve en Semana.',sec:'m-jefe'},
  {id:'2026-10-13a',fecha:'2026-10-13',titulo:'Instala la herramienta como aplicación con el logo',texto:'Ahora puedes instalarla en tu computadora o celular con el ícono de Lube N Save y abrirla sin la barra del navegador. Si ya tenías un acceso directo viejo (con una “C”), bórralo y vuelve a instalarla.',sec:'m-instalar'},
  {id:'2026-10-12b',fecha:'2026-10-12',titulo:'Manual de usuario dentro de la herramienta',texto:'Esta pestaña tiene el manual siempre actualizado. Cada vez que haya un cambio aparecerá un aviso amarillo y aquí lo verás explicado en “Novedades”.',sec:'m-que'},
  {id:'2026-10-12a',fecha:'2026-10-12',titulo:'Enlace al reporte de fotos y videos',texto:'Cada caso tiene el botón “Ver reporte con fotos y videos” y el mensaje de WhatsApp ya incluye el enlace para el cliente. Para que funcione, la carga semanal incluye ahora los dos reportes de Clear Mechanic: Cotizaciones y Formas de Inspección.',sec:'m-carga'},
@@ -716,7 +740,7 @@ const MAN=[
  {id:'m-cartera',r:0,t:'Cartera y Caso',h:`<ul><li><b>Cartera:</b> todos los casos. Filtra por estado o busca por OT, cliente o placa. Toca una fila para abrir el caso.</li><li><b>Caso:</b> partidas pendientes, bitácora de contactos (quién, cuándo, qué pasó), el botón <b>Ver reporte con fotos y videos</b> y el enlace a Clear Mechanic.</li><li>Si un caso no tiene enlace de inspección, se avisa: falta cargar el reporte “Formas de Inspección”.</li></ul>`},
  {id:'m-semana',r:0,t:'Semana y respaldo',h:`<ul><li><b>Semana:</b> el reporte del sábado: casos asignados, contactos, autorizados, lo recuperado y el incentivo del mes. Se llena solo con lo que se registra en “Hoy”.</li><li><b>Respaldo</b> (asesor y jefe): en Semana → Respaldo, “Descargar respaldo (Excel)”. Hazlo cada sábado y guárdalo solo en tu computadora; trae datos de clientes y no debe enviarse por WhatsApp ni subirse a internet.</li></ul>`},
  {id:'m-carga',r:1,t:'Cada lunes: carga de Clear Mechanic',h:`<p>La carga normalmente la hace el <b>jefe de taller</b>, pero el asesor también puede. Son <b>dos reportes</b> de Clear Mechanic, de los <b>últimos 30 días</b>:</p><ol><li>“Reporte de Actividad – <b>Cotizaciones</b>”</li><li>“Reporte de Actividad – <b>Formas de Inspección</b>” (trae el enlace de fotos y videos de cada orden)</li></ol><ul><li>En <b>Importar Clear Mechanic</b> arrastra los dos archivos juntos (o uno por uno, en cualquier orden): el sistema reconoce cuál es cuál.</li><li>Crea los casos nuevos, detecta a los clientes que ya aprobaron y asigna a cada caso su enlace. No duplica nada ni borra lo que ya se registró.</li><li>Si en “Hoy” aparece “Última carga de Clear Mechanic hace X días”, hay que cargar los reportes.</li></ul>`},
- {id:'m-jefe',r:2,t:'Solo jefe de taller: ajustes y usuarios',h:`<ul><li><b>Semana → Ajustes:</b> casos por día, meta mensual y porcentajes del incentivo. Después de cambiar los casos por día usa “Rehacer agenda” en Hoy para aplicarlo.</li><li><b>Usuarios y accesos</b> (Semana → Ajustes): agregar usuarios con su rol (consulta, asesor o jefe), restablecer el PIN de alguien y desactivar un acceso. Los usuarios no se borran, solo se desactivan.</li><li>Si pasan más de 7 días sin respaldo, en “Hoy” te sale un aviso.</li></ul>`},
+ {id:'m-jefe',r:2,t:'Solo jefe de taller: ajustes y usuarios',h:`<ul><li><b>Semana → Ajustes:</b> casos por día, meta mensual y porcentajes del incentivo. Después de cambiar los casos por día usa “Rehacer agenda” en Hoy para aplicarlo.</li><li><b>Recuperación con descuento:</b> si el cliente autorizó todo pero se facturó con descuento y el caso sigue mostrando una diferencia pendiente, abre el caso y toca <b>Ajustar a recuperación total (descuento)</b>. El monto recuperado no cambia; la diferencia queda registrada como descuento (con tu nota en la bitácora) y el caso pasa a 100% recuperado. Para evitarlo en adelante, el asesor debe registrar en “Autorizó” el monto cotizado y dejar el descuento para el jefe.</li><li><b>Usuarios y accesos</b> (Semana → Ajustes): agregar usuarios con su rol (consulta, asesor o jefe), restablecer el PIN de alguien y desactivar un acceso. Los usuarios no se borran, solo se desactivan.</li><li>Si pasan más de 7 días sin respaldo, en “Hoy” te sale un aviso.</li></ul>`},
  {id:'m-reglas',r:0,t:'Reglas de oro',h:`<ul><li>Registra <b>cada</b> contacto el mismo día: la bitácora es la prueba del trabajo.</li><li>Nada se cierra sin motivo: “Perdido” siempre lleva razón.</li><li>No compartas tu PIN y toca <b>Salir</b> al terminar.</li><li>Si algo se ve raro o no carga: recarga la página (Ctrl + F5 en computadora). Si sigue igual, avisa al jefe de taller con una captura.</li></ul>`}
 ];
 let manNuevas=new Set();
