@@ -69,6 +69,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('parcial OT 5381: cartera Q1,045,813',await sinEsp(page,'#kDorm')==='Q1,045,813');
     await page.click('nav button[data-t="semana"]');await page.waitForTimeout(200);
     ok('semana: recuperado Q22,699',await sinEsp(page,'#kSem')==='Q22,699');
+    ok('semana: muestra la mano de obra recuperada de la semana y del mes',await sinEsp(page,'#kSemMO')==='Q5,000'&&await sinEsp(page,'#kMesMO')==='Q5,000');
     ok('bitácora guarda usuario',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.some(b=>b.usuario==='Ricardo'&&/Autorizado/.test(b.resultado))));
     ok('bitácora conserva la entrada de importación',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.length===2));
     ok('asesor no ve Ajustes',!(await page.$('#cSave')));
@@ -153,7 +154,11 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   // Jefe: ajustar un caso con descuento (recuperó parcial, el cliente autorizó todo con descuento)
   await b.page.click('nav button[data-t="cartera"]');await b.page.fill('#fBus','5399');await b.page.click('tr[data-ver="5399"]');
   ok('jefe: sin botón de descuento si no hay recuperación registrada',!(await b.page.$('#caso button[data-a="descuento"]')));
-  await b.page.click('#caso button[data-a="autorizo"]');await b.page.fill('#aM','5000');await b.page.click('#dOk');await b.page.waitForTimeout(500);
+  await b.page.click('#caso button[data-a="autorizo"]');await b.page.fill('#aM','5000');
+  ok('Autorizó parcial: la mano de obra se propone en proporción al monto',await b.page.evaluate(()=>{const c=__DB.crm_casos['5399'];const P=Object.values(c.partidas).filter(p=>p.total>0&&!p.recuperada&&p.estadoCM!=='Aprobado');const t=P.reduce((a,p)=>a+p.total,0),mo=P.reduce((a,p)=>a+p.mo,0);return Number(document.querySelector('#aMO').value)===Math.round(mo*5000/t)}));
+  await b.page.fill('#aMO','99999');await b.page.click('#dOk');await b.page.waitForTimeout(250);
+  ok('Autorizó: la mano de obra no puede ser mayor al monto',/mano de obra no puede ser mayor/.test(await b.page.textContent('#toast')));
+  await b.page.fill('#aMO','1500');await b.page.click('#dOk');await b.page.waitForTimeout(500);
   ok('jefe: aparece el botón de descuento tras un recupero parcial',!!(await b.page.$('#caso button[data-a="descuento"]')));
   await b.page.click('#caso button[data-a="descuento"]');await b.page.waitForTimeout(150);await b.page.screenshot({path:path.join(out,'8a-descuento-dialogo.png')});
   const dif=Number(await b.page.inputValue('#dM'));
