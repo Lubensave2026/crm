@@ -5,3 +5,5 @@ tests/out/
 .firebase/
 *.log
 tests/fixtures/
+/*.docx
+/*.pdf
