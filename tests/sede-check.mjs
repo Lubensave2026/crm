@@ -21,6 +21,7 @@ ok('íconos y reglas copiados',fs.existsSync(path.join(out,'icons','icon-512.png
 let noZ=false;try{execFileSync('node',[path.join(root,'tools','generar-sede.mjs'),'zona10','--out',path.join(dir,'out','no-zona10')],{stdio:'pipe'})}catch(e){noZ=/no genera Zona 10/.test(String(e.stderr))}
 ok('el generador se niega a generar Zona 10',noZ&&!fs.existsSync(path.join(dir,'out','no-zona10')));
 // una sede con datos PENDIENTE no se genera
-let rechazo=false;try{execFileSync('node',[path.join(root,'tools','generar-sede.mjs'),'carretera','--out',path.join(dir,'out','no-debe-existir')],{stdio:'pipe'})}catch(e){rechazo=/Faltan datos/.test(String(e.stderr))}
+const jp=path.join(dir,'out','sede-pendiente.json');fs.writeFileSync(jp,JSON.stringify({...JSON.parse(fs.readFileSync(j,'utf8')),clearMechanic:'PENDIENTE'}));
+let rechazo=false;try{execFileSync('node',[path.join(root,'tools','generar-sede.mjs'),jp,'--out',path.join(dir,'out','no-debe-existir')],{stdio:'pipe'})}catch(e){rechazo=/Faltan datos/.test(String(e.stderr))}
 ok('sede con datos PENDIENTE: se rechaza',rechazo&&!fs.existsSync(path.join(dir,'out','no-debe-existir')));
 process.exit(fallos?1:0);

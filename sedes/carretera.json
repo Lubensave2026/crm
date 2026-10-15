@@ -2,23 +2,26 @@
   "id": "carretera",
   "docId": "carretera",
   "prefijo": "lns_crm_carretera_",
-  "nombre": "PENDIENTE (ej.: Lube N Save Carretera al Salvador)",
-  "corto": "Carretera al Salvador",
-  "shortName": "CRM Carretera",
-  "clearMechanic": "PENDIENTE (dirección https de su Clear Mechanic)",
-  "asesor": "PENDIENTE (nombre del asesor que firma los mensajes)",
+  "nombre": "Lube N Save Carretera al Salvador",
+  "corto": "Lube N Save CAES",
+  "shortName": "CRM CAES",
+  "clearMechanic": "https://lubensave14.clearmechanic.com/dashboard/orders",
+  "asesor": "Edson",
   "repo": "lubensave2026/crm-carretera",
   "url": "https://lubensave2026.github.io/crm-carretera/",
   "firebase": {
-    "apiKey": "PENDIENTE",
-    "authDomain": "PENDIENTE",
-    "projectId": "PENDIENTE (propuesto: crm-lns-carretera)",
-    "storageBucket": "PENDIENTE",
-    "messagingSenderId": "PENDIENTE",
-    "appId": "PENDIENTE"
+    "apiKey": "AIzaSyCNTGsks9Ii-Q_ZL00jMgAT5ATq66mgAtQ",
+    "authDomain": "crm-lns-carretera.firebaseapp.com",
+    "projectId": "crm-lns-carretera",
+    "storageBucket": "crm-lns-carretera.firebasestorage.app",
+    "messagingSenderId": "877599656555",
+    "appId": "1:877599656555:web:e7ea5577413973e0503f2e"
   },
   "usuarios": [
-    { "id": "PENDIENTE", "nombre": "PENDIENTE (jefe de taller)", "rol": "jefe" },
-    { "id": "PENDIENTE", "nombre": "PENDIENTE (asesor)", "rol": "asesor" }
+    {
+      "id": "byron",
+      "nombre": "Byron",
+      "rol": "jefe"
+    }
   ]
 }

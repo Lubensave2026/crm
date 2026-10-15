@@ -46,7 +46,7 @@ sub("Clear Mechanic","https://lubensavezona10.clearmechanic.com/dashboard/orders
 sub("asesor por defecto","asesor:'Ricardo'","asesor:'"+cfg.asesor+"'",1);
 sub("asesor por defecto (ajustes)","||'Ricardo'","||'"+cfg.asesor+"'",1);
 // Nombre de la aplicación
-const nombreApp='CRM Lube N Save · '+cfg.corto;
+const nombreApp=/^Lube N Save/i.test(cfg.corto)?'CRM '+cfg.corto:'CRM Lube N Save · '+cfg.corto;
 sub("título",'<title>CRM Lube N Save</title>','<title>'+esc(nombreApp)+'</title>',1);
 sub("application-name",'<meta name="application-name" content="CRM Lube N Save">','<meta name="application-name" content="'+esc(nombreApp)+'">',1);
 sub("apple title",'<meta name="apple-mobile-web-app-title" content="CRM LNS">','<meta name="apple-mobile-web-app-title" content="'+esc(cfg.shortName)+'">',1);
