@@ -1,0 +1,25 @@
+{
+  "id": "zona10",
+  "docId": "zona10",
+  "prefijo": "lns_crm_",
+  "nombre": "Lube N Save Zona 10",
+  "corto": "Zona 10",
+  "shortName": "CRM LNS",
+  "clearMechanic": "https://lubensavezona10.clearmechanic.com/dashboard/orders",
+  "asesor": "Ricardo",
+  "repo": "lubensave2026/crm",
+  "url": "https://lubensave2026.github.io/crm/",
+  "firebase": {
+    "apiKey": "AIzaSyAf8qbial6VACkhtM6po9N97osPQ-hEnac",
+    "authDomain": "crm-lube-n-save.firebaseapp.com",
+    "projectId": "crm-lube-n-save",
+    "storageBucket": "crm-lube-n-save.firebasestorage.app",
+    "messagingSenderId": "483911966336",
+    "appId": "1:483911966336:web:779cc512b9ab6a3edb9065"
+  },
+  "usuarios": [
+    { "id": "byron", "nombre": "Byron", "rol": "jefe" },
+    { "id": "ricardo", "nombre": "Ricardo", "rol": "asesor" },
+    { "id": "mario", "nombre": "Mario", "rol": "consulta" }
+  ]
+}

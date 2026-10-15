@@ -1,0 +1,24 @@
+{
+  "id": "carretera",
+  "docId": "carretera",
+  "prefijo": "lns_crm_carretera_",
+  "nombre": "PENDIENTE (ej.: Lube N Save Carretera al Salvador)",
+  "corto": "Carretera al Salvador",
+  "shortName": "CRM Carretera",
+  "clearMechanic": "PENDIENTE (dirección https de su Clear Mechanic)",
+  "asesor": "PENDIENTE (nombre del asesor que firma los mensajes)",
+  "repo": "lubensave2026/crm-carretera",
+  "url": "https://lubensave2026.github.io/crm-carretera/",
+  "firebase": {
+    "apiKey": "PENDIENTE",
+    "authDomain": "PENDIENTE",
+    "projectId": "PENDIENTE (propuesto: crm-lns-carretera)",
+    "storageBucket": "PENDIENTE",
+    "messagingSenderId": "PENDIENTE",
+    "appId": "PENDIENTE"
+  },
+  "usuarios": [
+    { "id": "PENDIENTE", "nombre": "PENDIENTE (jefe de taller)", "rol": "jefe" },
+    { "id": "PENDIENTE", "nombre": "PENDIENTE (asesor)", "rol": "asesor" }
+  ]
+}

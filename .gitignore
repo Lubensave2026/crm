@@ -7,3 +7,4 @@ tests/out/
 tests/fixtures/
 /*.docx
 /*.pdf
+dist/

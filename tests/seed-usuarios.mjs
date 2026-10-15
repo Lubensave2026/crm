@@ -1,12 +1,18 @@
 // Crea los usuarios (PIN con hash SHA-256 + sal) y la configuración inicial en Firestore.
-// Ejecútalo TÚ en tu terminal: los PIN no se guardan en ningún archivo.   node tests/seed-usuarios.mjs
+// Ejecútalo TÚ en tu terminal: los PIN no se guardan en ningún archivo.
+//   node tests/seed-usuarios.mjs            (Zona 10)
+//   node tests/seed-usuarios.mjs carretera  (usa sedes/carretera.json: proyecto Firebase y usuarios de esa sede)
 import readline from 'node:readline';
 import crypto from 'node:crypto';
 import {initializeApp} from 'firebase/app';
 import {getAuth,signInAnonymously} from 'firebase/auth';
 import {getFirestore,doc,setDoc,getDoc} from 'firebase/firestore';
-const app=initializeApp({apiKey:"AIzaSyAf8qbial6VACkhtM6po9N97osPQ-hEnac",authDomain:"crm-lube-n-save.firebaseapp.com",projectId:"crm-lube-n-save",appId:"1:483911966336:web:779cc512b9ab6a3edb9065"});
-const USERS=[{id:'byron',nombre:'Byron',rol:'jefe'},{id:'ricardo',nombre:'Ricardo',rol:'asesor'},{id:'mario',nombre:'Mario',rol:'consulta'}];
+import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';
+const sede=JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'..','sedes',(process.argv[2]||'zona10')+'.json'),'utf8'));
+if(JSON.stringify(sede).includes('PENDIENTE')){console.error('Completa primero sedes/'+sede.id+'.json (hay datos PENDIENTE).');process.exit(1)}
+console.log('Sede: '+sede.nombre+' · proyecto Firebase: '+sede.firebase.projectId);
+const app=initializeApp(sede.firebase);
+const USERS=sede.usuarios;
 const rl=readline.createInterface({input:process.stdin,output:process.stdout,terminal:true});
 let muted=false;const w=rl._writeToOutput.bind(rl);rl._writeToOutput=s=>{if(!muted||/[\r\n]/.test(s))w(s)};
 const ask=q=>new Promise(r=>{process.stdout.write(q);muted=true;rl.question('',a=>{muted=false;process.stdout.write('\n');r(a.trim())})});
@@ -19,6 +25,6 @@ for(const u of USERS){
   await setDoc(doc(db,'crm_usuarios',u.id),{nombre:u.nombre,rol:u.rol,sal,pinHash});
   console.log('  ✓ '+u.nombre);
 }
-const cfg=doc(db,'crm_config','zona10');
-if(!(await getDoc(cfg)).exists())await setDoc(cfg,{min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'});
+const cfg=doc(db,'crm_config',sede.docId);
+if(!(await getDoc(cfg)).exists())await setDoc(cfg,{min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:sede.asesor});
 console.log('Listo.');rl.close();process.exit(0);

@@ -6,7 +6,8 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 const dir=path.dirname(fileURLToPath(import.meta.url)),root=path.join(dir,'..'),out=path.join(dir,'out');
 fs.mkdirSync(out,{recursive:true});
 const xlsx=path.join(root,'tests','fixtures',fs.readdirSync(path.join(root,'tests','fixtures')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f)));
-const htmlApp=fs.readFileSync(path.join(root,'index.html'),'utf8');
+const htmlApp=fs.readFileSync(process.env.APP_HTML?path.resolve(process.env.APP_HTML):path.join(root,'index.html'),'utf8');
+const PREFIJO=(htmlApp.match(/localStorage\.getItem\('([^']+)'\+k\)/)||[])[1]||'lns_crm_';
 const nov=[...htmlApp.matchAll(/\{id:'(\d{4}-\d{2}-\d{2}[a-z])',fecha:'[^']+',titulo:'([^']+)'/g)].map(m=>({id:m[1],titulo:m[2]}));
 const novMasReciente=nov[0].titulo,novTrasVista=nov.filter(n=>n.id>'2026-10-09c').length-1;
 const formas=path.join(root,'tests','fixtures',fs.readdirSync(path.join(root,'tests','fixtures')).find(f=>/Formas.*xlsx$/.test(f)&&!f.startsWith('~')));
@@ -20,7 +21,7 @@ async function abrir(vp){
   const errs=[];page.on('pageerror',e=>errs.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!/fonts|favicon|ERR_/i.test(m.text()))errs.push(m.text())});
   await page.route(/gstatic\.com\/firebasejs\/.*\/firebase-(app|auth|firestore)\.js/,r=>{const k=r.request().url().match(/firebase-(\w+)\.js/)[1];r.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(dir,mods[k]),'utf8')})});
   await page.addInitScript(s=>{const p=sessionStorage.getItem('__fakeDB');globalThis.__DB=JSON.parse(p||s)},JSON.stringify(seed));
-  await page.goto(pathToFileURL(path.join(root,'index.html')).href);
+  await page.goto(pathToFileURL(process.env.APP_HTML?path.resolve(process.env.APP_HTML):path.join(root,'index.html')).href);
   await page.waitForSelector('#lu');
   return {ctx,page,errs};
 }
@@ -52,7 +53,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('importación: 102 casos nuevos',/102/.test(await page.textContent('#impRes')));
     ok('importación: 54 avisos',/>54</.test(await page.innerHTML('#impRes')));
     ok('agenda de hoy creada (2 a 5 casos)',await page.evaluate(()=>{const a=Object.values(__DB.crm_agenda||{})[0];return !!a&&a.ots.length>=2&&a.ots.length<=5}));
-    ok('enlaces: 220 guardados en un solo documento',await page.evaluate(()=>Object.keys(__DB.crm_enlaces.zona10.urls).length===220));
+    ok('enlaces: 220 guardados en un solo documento',await page.evaluate(()=>Object.keys(Object.values(__DB.crm_enlaces)[0].urls).length===220));
     ok('enlaces: 100 de 102 casos con enlace',/100 de 102 tienen enlace/.test(await page.textContent('#impEnl')));
     ok('enlaces: avisa de los casos sin enlace',/2 casos abiertos sin enlace/.test(await page.textContent('#impRes')));
     await page.setInputFiles('#file',[formas,xlsx]);await page.waitForSelector('#kCart');await page.waitForSelector('#impEnl');await page.waitForTimeout(1200);
@@ -116,7 +117,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('respaldo: hojas',JSON.stringify(wbk.SheetNames)===JSON.stringify(['Resumen','Cartera','Partidas','Bitácora','Recuperos','Cierres mensuales']));
     ok('respaldo: 102 casos en Cartera',XL.utils.sheet_to_json(wbk.Sheets.Cartera).length===102);
     ok('respaldo: nombre con fecha',/^CRM_LNS_Respaldo_\d{4}-\d{2}-\d{2}\.xlsx$/.test(dl.suggestedFilename()));
-    ok('respaldo: se anota en crm_config',await page.evaluate(()=>__DB.crm_config.zona10.ultimoRespaldo?.por==='Ricardo'));
+    ok('respaldo: se anota en crm_config',await page.evaluate(()=>Object.values(__DB.crm_config).some(x=>x.ultimoRespaldo&&x.ultimoRespaldo.por==='Ricardo')));
     ok('respaldo: la pantalla muestra el último respaldo',/Último respaldo/.test(await page.textContent('#bkInfo')));
     await page.click('nav button[data-t="cartera"]');await page.fill('#fBus','5399');await page.click('tr[data-ver="5399"]');
     ok('asesor: sin opción de ajustar por descuento',!(await page.$('#caso button[data-a="descuento"]')));
@@ -157,7 +158,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await r.page.click('#lu button:has-text("Ricardo")');await r.page.fill('#lpin','222222');await r.page.click('#lgo');ok('PIN viejo ya no entra',/incorrecto/i.test(await r.page.textContent('#lerr')));
   await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});ok('PIN nuevo entra',true);
   ok('el aviso no vuelve a salir si ya lo vio',!(await r.page.isVisible('#nov')));
-  await r.page.evaluate(()=>localStorage.setItem('lns_crm_visto_ricardo','2026-10-09c'));await r.page.click('#salir');await r.page.waitForSelector('#lu');await r.page.click('#lu button:has-text("Ricardo")');await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});
+  await r.page.evaluate(px=>localStorage.setItem(px+'visto_ricardo','2026-10-09c'),PREFIJO);await r.page.click('#salir');await r.page.waitForSelector('#lu');await r.page.click('#lu button:has-text("Ricardo")');await r.page.fill('#lpin','654321');await r.page.click('#lgo');await r.page.waitForSelector('#login',{state:'hidden'});
   ok('con novedades nuevas vuelve el aviso (+'+novTrasVista+' más)',(await r.page.textContent('#nov')).includes(novMasReciente)&&(await r.page.textContent('#nov')).includes('(+'+novTrasVista+' más)'));
   await r.ctx.close();
   const b=await abrir({width:1280,height:900});await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
