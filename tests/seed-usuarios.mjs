@@ -13,13 +13,13 @@ if(JSON.stringify(sede).includes('PENDIENTE')){console.error('Completa primero s
 console.log('Sede: '+sede.nombre+' · proyecto Firebase: '+sede.firebase.projectId);
 const app=initializeApp(sede.firebase);
 const USERS=sede.usuarios;
-const rl=readline.createInterface({input:process.stdin,output:process.stdout,terminal:true});
-let muted=false;const w=rl._writeToOutput.bind(rl);rl._writeToOutput=s=>{if(!muted||/[\r\n]/.test(s))w(s)};
-const ask=q=>new Promise(r=>{process.stdout.write(q);muted=true;rl.question('',a=>{muted=false;process.stdout.write('\n');r(a.trim())})});
+const rl=readline.createInterface({input:process.stdin,output:process.stdout});
+// El PIN se ve al escribirlo (solo en tu pantalla); no se guarda en ningún archivo.
+const ask=q=>new Promise(r=>rl.question(q,a=>r(a.trim())));
 await signInAnonymously(getAuth(app));const db=getFirestore(app);
 for(const u of USERS){
   const ya=(await getDoc(doc(db,'crm_usuarios',u.id))).exists();
-  let pin;for(;;){pin=await ask(`PIN de ${u.nombre} (${u.rol}), 6 dígitos${ya?' [ya existe: se reemplaza]':''}: `);if(/^\d{6}$/.test(pin))break;console.log('Deben ser exactamente 6 dígitos.')}
+  let pin;for(;;){pin=await ask(`PIN de ${u.nombre} (${u.rol}), 6 dígitos${ya?' [ya existe: se reemplaza]':''}: `);if(/^\d{6}$/.test(pin))break;console.log('Deben ser exactamente 6 dígitos (recibí '+pin.length+' caracteres). Intenta de nuevo.')}
   const sal=crypto.randomBytes(16).toString('hex');
   const pinHash=crypto.createHash('sha256').update(sal+':'+u.id+':'+pin).digest('hex');
   await setDoc(doc(db,'crm_usuarios',u.id),{nombre:u.nombre,rol:u.rol,sal,pinHash});
