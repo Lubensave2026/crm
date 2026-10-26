@@ -36,6 +36,8 @@ h2{font-family:var(--display);font-size:20px;margin:0}
 .k .l{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
 .k .v{font-family:var(--mono);font-size:21px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .k .n{font-size:12px;color:var(--muted)}
+.kbtn{border:0;font:inherit;color:inherit;text-align:left;width:100%;cursor:pointer}.kbtn:hover,.kbtn:focus-visible{background:var(--yellow-soft)}
+.rcs{border-top:1px solid var(--line);padding:10px 0}.rcs ul{margin:6px 0 0;padding-left:18px}.rcs li{display:flex;justify-content:space-between;gap:12px}
 .k.hl{background:var(--yellow);color:#141414}.k.hl .l,.k.hl .n{color:#3a3a3a}
 .card{background:var(--paper);border:1px solid var(--line);display:grid;grid-template-columns:6px 1fr;min-width:0}
 .st.rojo{background:var(--red)}.st.amarillo{background:#e0b400}.st.verde{background:var(--green)}
@@ -359,6 +361,35 @@ function pendientesAnteriores(casos,agendas,hoy,diasMax){
   }
   return Object.entries(res).map(([ot,d])=>({c:casos[ot],dia:d})).sort((a,b)=>a.dia.localeCompare(b.dia)||score(b.c)-score(a.c));
 }
+
+/* ---- Detalle de lo recuperado entre dos fechas (inclusive): por caso, cada autorización y los puntos aprobados ----
+   Las recuperaciones de Clear Mechanic traen el monto de una partida (se busca la partida con ese monto);
+   una autorización total manual lista las partidas recuperadas que no vienen de Clear Mechanic;
+   una parcial manual no sabe qué puntos fueron: muestra la nota que escribió el asesor. */
+function recuperadoDetalle(casos,desde,hasta){
+  const out=[];let monto=0,autor=0;
+  for(const c of Object.values(casos)){
+    const recs=c.recuperos||[];
+    if(!recs.some(r=>r.fecha>=desde&&r.fecha<=hasta))continue;
+    const pool=Object.values(c.partidas||{}).filter(p=>p.recuperada);
+    const asig=new Map();
+    recs.forEach((r,i)=>{if(r.tipo!=='clear-mechanic')return;const j=pool.findIndex(p=>Math.abs((p.total||0)-(r.monto||0))<0.005);asig.set(i,j<0?[]:pool.splice(j,1))});
+    const notas=(c.bitacora||[]).filter(b=>/^(Autorizado|Corrección del jefe: autorizado)/i.test(b.resultado||'')).map(b=>{const n=b.nota||'',k=n.indexOf(' · ');return k<0?'':n.slice(k+3)});
+    let ni=0;const items=[];let mc=0;
+    recs.forEach((r,i)=>{
+      const manual=r.tipo!=='clear-mechanic',nota=manual?(notas[ni++]||''):'';
+      if(r.fecha<desde||r.fecha>hasta)return;
+      let puntos=asig.get(i)||[];
+      if(manual&&r.tipo==='total'){puntos=pool.splice(0)}
+      items.push({fecha:r.fecha,tipo:r.tipo,monto:r.monto||0,mo:r.mo||0,usuario:r.usuario||'',nota,puntos:puntos.map(p=>({punto:p.punto,total:p.total}))});
+      mc+=r.monto||0;autor++;
+    });
+    monto+=mc;
+    out.push({c,monto:mc,items,ult:items.reduce((a,x)=>x.fecha>a?x.fecha:a,'')});
+  }
+  out.sort((a,b)=>b.ult.localeCompare(a.ult)||b.monto-a.monto);
+  return {casos:out,monto,autor};
+}
 /*@PURA-FIN*/
 
 /* ================= DATOS EN LA NUBE ================= */
@@ -446,6 +477,17 @@ function accion(ot,tipo){
 }
 function openDlg(html,onOk){$('#dlg').innerHTML=html+`<div class="acts" style="justify-content:flex-end"><button class="btn" id="dCancel">Cancelar</button><button class="btn k1" id="dOk">Guardar</button></div>`;$('#ov').hidden=false;$('#dCancel').onclick=closeDlg;$('#dOk').onclick=()=>{if(onOk()!==false)closeDlg()};const f=$('#dlg input,#dlg select');f&&f.focus()}
 function closeDlg(){$('#ov').hidden=true}
+/* Lo recuperado esta semana (Hoy → casilla "Recuperado esta semana"): solo los casos autorizados y los puntos aprobados con su monto */
+function dlgRecSemana(){
+  const ws=weekStart(TODAY),fin=addDays(ws,5),d=recuperadoDetalle(S.casos,ws,fin);
+  const tipoTxt=t=>({total:'Autorización total',parcial:'Autorización parcial','clear-mechanic':'Aprobado en Clear Mechanic'}[t]||t);
+  const caso=x=>{const c=x.c;return `<div class="rcs"><div class="row"><div><b>OT ${esc(c.ot)} · ${esc(c.cliente)}</b><div class="sm">${esc(c.vehiculo)} · ${esc(c.placa)} · <a href="#" data-ver="${esc(c.ot)}">Ver caso</a></div></div><b class="money">${Q(x.monto)}</b></div>
+    ${x.items.map(i=>`<div class="sm" style="margin-top:6px"><b>${fmtD(i.fecha)}</b> · ${tipoTxt(i.tipo)} ${Q(i.monto)}${i.usuario?' · '+esc(i.usuario):''}${i.nota?' · '+esc(i.nota):''}</div>${i.puntos.length?`<ul>${i.puntos.map(p=>`<li><span>${esc(p.punto)}</span><span>${Q(p.total)}</span></li>`).join('')}</ul>`:''}`).join('')}</div>`};
+  $('#dlg').innerHTML=`<h2>Recuperado esta semana</h2><p class="sm">${fmtD(ws)} al ${fmtD(fin)} · <b>${Q(d.monto)}</b> · ${pl(d.casos.length,'caso','casos')} · ${pl(d.autor,'autorización','autorizaciones')}</p>
+   ${d.casos.length?d.casos.map(caso).join(''):'<p class="sm">Todavía no hay casos autorizados esta semana.</p>'}
+   <div class="acts" style="justify-content:flex-end"><button class="btn k1" id="dCancel">Cerrar</button></div>`;
+  $('#ov').hidden=false;$('#dCancel').onclick=closeDlg;
+}
 function dlgAutorizo(c,opt){
   const corr=!!(opt&&opt.correccion);
   const m=montoCaso(c),mo=moCaso(c);
@@ -687,7 +729,7 @@ function renderHoy(){
   el.innerHTML=`<div class="row"><div><h1>Tus casos de hoy</h1><p class="lead">Entre ${S.cfg.min} y ${S.cfg.max} casos por día: primero los reprogramados y los seguimientos que vencen (48 h · 7 d · 30 d), después los de mayor monto × urgencia. Registra el resultado de cada uno.</p></div>${canAct()?'<button class="btn" id="reAg">Rehacer agenda</button>':''}</div>
    <div class="kpis"><div class="k hl"><div class="l">En juego hoy</div><div class="v">${Q(ag.reduce((a,c)=>a+montoCaso(c),0))}</div><div class="n">${pl(ag.length,'caso asignado','casos asignados')}</div></div>
    <div class="k"><div class="l">Registrados</div><div class="v">${hechos} / ${ag.length}</div><div class="n">Meta: todos antes de las 12:00</div></div>
-   <div class="k"><div class="l">Recuperado esta semana</div><div class="v">${Q(sem.monto)}</div><div class="n">${pl(sem.autor,'caso autorizado','casos autorizados')}</div></div></div>
+   <button type="button" class="k kbtn" id="kRec" title="Ver los casos autorizados esta semana"><div class="l">Recuperado esta semana</div><div class="v">${Q(sem.monto)}</div><div class="n">${pl(sem.autor,'caso autorizado','casos autorizados')}${sem.autor?' · toca para ver el detalle':''}</div></button></div>
    ${atras!==null&&atras>7?`<div class="msg"><b>Última carga de Clear Mechanic hace ${atras} días.</b> Sube el reporte de los últimos 30 días para no perder los seguimientos de 48 h y 7 días. ${canAct()?'<button class="btn" data-go="importar">Importar</button>':''}</div>`:''}
    ${!ult?`<div class="msg"><b>Aún no hay cargas registradas.</b></div>`:''}
    ${isJefe()&&(bk===null||bk>7)?`<div class="msg"><b>${bk===null?'Todavía no hay respaldo del CRM.':'Último respaldo hace '+bk+' días.'}</b> Descárgalo en Semana → Respaldo. <button class="btn" data-go="semana">Ir a Semana</button></div>`:''}
@@ -825,6 +867,7 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manu
    Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
    (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
 const NOVEDADES=[
+ {id:'2026-10-26a',fecha:'2026-10-26',titulo:'Detalle de lo recuperado esta semana',texto:'En “Hoy”, toca la casilla “Recuperado esta semana” y verás solo los casos que se autorizaron, con los puntos aprobados y su monto.',sec:'m-hoy'},
  {id:'2026-10-13f',fecha:'2026-10-13',titulo:'Jefe de taller: corregir un caso cerrado como En taller o Perdido',texto:'Si un caso se cerró como En taller o Perdido pero el cliente sí autorizó, el jefe puede registrar la recuperación desde el caso para que cuente en lo recuperado y en el incentivo.',sec:'m-jefe'},
  {id:'2026-10-13e',fecha:'2026-10-13',titulo:'Pendientes de días anteriores en “Hoy”',texto:'Los casos que estaban en la lista de un día pasado y nadie contactó ahora aparecen en una sección aparte debajo de la lista de hoy, para que no se escapen. Puedes trabajarlos ahí o agregarlos a la lista de hoy.',sec:'m-hoy'},
  {id:'2026-10-13d',fecha:'2026-10-13',titulo:'Jefe de taller: quitar un caso que ya estaba autorizado',texto:'Si la carga de Clear Mechanic contó como recuperado un caso que el cliente ya había autorizado antes, el jefe puede quitarlo de lo recuperado desde el caso, con su nota.',sec:'m-jefe'},
@@ -842,7 +885,7 @@ const MAN=[
  {id:'m-consulta',r:-1,t:'Tu usuario es de consulta',h:`<p>Con tu usuario puedes ver la agenda, la cartera, cada caso y el reporte de la semana, pero no registrar contactos ni cargar archivos. Cualquier cambio lo hace el asesor o el jefe de taller.</p>`},
  {id:'m-entrar',r:0,t:'Entrar, salir y cambiar tu PIN',h:`<ul><li>Abre la dirección de la herramienta, toca tu <b>nombre</b> y escribe tu <b>PIN de 6 dígitos</b>.</li><li>Tu PIN es personal: no lo compartas. <b>Cámbialo la primera vez</b> con el botón <b>Cambiar PIN</b> (arriba a la derecha): PIN actual, PIN nuevo y repetirlo.</li><li>Si lo olvidas, el jefe de taller te lo restablece.</li><li>Al terminar toca <b>Salir</b>, sobre todo en computadoras compartidas.</li></ul>`},
  {id:'m-instalar',r:0,t:'Instalar como aplicación (con el logo)',h:`<p>Puedes instalar la herramienta para abrirla con un ícono de Lube N Save y en su propia ventana, sin la barra del navegador.</p><ul><li><b>Computadora con Chrome:</b> abre la dirección de la herramienta, menú <b>⋮</b> (arriba a la derecha) → <b>Guardar y compartir</b> → <b>Instalar página como aplicación…</b>. Se crea el ícono en el escritorio.</li><li><b>Computadora con Edge:</b> menú <b>…</b> → <b>Aplicaciones</b> → <b>Instalar este sitio como aplicación</b>.</li><li><b>Celular Android (Chrome):</b> menú <b>⋮</b> → <b>Instalar aplicación</b> (o <b>Agregar a la pantalla de inicio</b>).</li><li><b>iPhone (Safari):</b> botón <b>Compartir</b> → <b>Agregar a pantalla de inicio</b>.</li></ul><p>Si ya tenías un acceso directo anterior (con una “C” gris), <b>bórralo</b> y vuelve a instalarla: el viejo no cambia de ícono por sí solo.</p>`},
- {id:'m-hoy',r:1,t:'Tu rutina diaria: pantalla “Hoy”',h:`<p>Al empezar el día abre <b>Hoy</b>. Verás de 2 a 5 tarjetas; el color de la izquierda es la urgencia (rojo = crítico, amarillo = preventivo). Para cada una:</p><ol><li>Lee el mensaje sugerido y toca <b>Abrir WhatsApp</b>: se abre el chat con el mensaje ya escrito <b>y el enlace al reporte de fotos y videos</b>. Revísalo y envíalo desde WhatsApp.</li><li>Si quieres ver las fotos y lo cotizado, toca <b>Ver reporte</b> (es el mismo enlace que verá el cliente).</li><li>Apenas el cliente responda (o no), <b>registra el resultado</b>. Una tarjeta sin registrar es un cliente que el sistema cree que no has contactado.</li></ol><p><b>Meta: todas las tarjetas registradas antes de las 12:00.</b></p><p>Más abajo, en <b>Pendientes de días anteriores</b>, aparecen los casos que estaban en la lista de un día pasado y que nadie ha contactado desde entonces (hasta 14 días atrás). Se trabajan igual que los de hoy, y con <b>Agregar a la lista de hoy</b> pasan a contar entre los asignados del día. Los que ya contactaste o reprogramaste no aparecen.</p>
+ {id:'m-hoy',r:1,t:'Tu rutina diaria: pantalla “Hoy”',h:`<p>Al empezar el día abre <b>Hoy</b>. Verás de 2 a 5 tarjetas; el color de la izquierda es la urgencia (rojo = crítico, amarillo = preventivo). Para cada una:</p><ol><li>Lee el mensaje sugerido y toca <b>Abrir WhatsApp</b>: se abre el chat con el mensaje ya escrito <b>y el enlace al reporte de fotos y videos</b>. Revísalo y envíalo desde WhatsApp.</li><li>Si quieres ver las fotos y lo cotizado, toca <b>Ver reporte</b> (es el mismo enlace que verá el cliente).</li><li>Apenas el cliente responda (o no), <b>registra el resultado</b>. Una tarjeta sin registrar es un cliente que el sistema cree que no has contactado.</li></ol><p><b>Meta: todas las tarjetas registradas antes de las 12:00.</b></p><p>Arriba de las tarjetas, toca la casilla <b>Recuperado esta semana</b> para ver solo los casos autorizados de la semana (lunes a sábado): cliente, OT, monto y los <b>puntos aprobados con su monto</b>. En una autorización parcial registrada a mano se muestra la nota que escribió el asesor, porque ahí no se guardan los puntos.</p><p>Más abajo, en <b>Pendientes de días anteriores</b>, aparecen los casos que estaban en la lista de un día pasado y que nadie ha contactado desde entonces (hasta 14 días atrás). Se trabajan igual que los de hoy, y con <b>Agregar a la lista de hoy</b> pasan a contar entre los asignados del día. Los que ya contactaste o reprogramaste no aparecen.</p>
   <div class="tw"><table><thead><tr><th>Botón</th><th>Cuándo usarlo</th><th>Qué pasa</th></tr></thead><tbody>
   <tr><td>Autorizó</td><td>El cliente aceptó hacer el trabajo</td><td>Registra el monto recuperado (ver más abajo)</td></tr>
   <tr><td>Reprogramar</td><td>Pide que lo busques después</td><td>Eliges la fecha; el caso vuelve a “Hoy” ese día</td></tr>
@@ -877,10 +920,11 @@ function renderManual(){
 /* ================= EVENTOS ================= */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec],#cierreGo,[data-addhoy]');if(!t)return;
+  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec],#cierreGo,[data-addhoy],#kRec');if(!t)return;
   if(t.id==='salir'){sess('user',null);location.reload();return}
+  if(t.id==='kRec')return dlgRecSemana();
   if(t.dataset.go)return go(t.dataset.go);
-  if(t.dataset.ver){casoSel=t.dataset.ver;return go('caso')}
+  if(t.dataset.ver){e.preventDefault();closeDlg();casoSel=t.dataset.ver;return go('caso')}
   if(t.dataset.a){if(t.tagName!=='A')e.preventDefault();return accion(t.dataset.ot,t.dataset.a)}
   if(t.dataset.copy){const c=S.casos[t.dataset.copy];try{await navigator.clipboard.writeText(mensaje(c));toast('Mensaje copiado')}catch(_){toast('No se pudo copiar: selecciona el texto')}return}
   if(t.dataset.sem){if(!canAct())return;wr(casoSel,['sem',t.dataset.sem]);return}

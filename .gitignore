@@ -7,3 +7,8 @@ tests/out/
 tests/fixtures/
 /*.docx
 /*.pdf
+dist/
+
+# Reportes de Clear Mechanic de cada sede (datos de clientes: nunca al repositorio)
+/cargas/
+/RESPALDOS/
