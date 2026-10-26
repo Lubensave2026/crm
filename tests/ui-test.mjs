@@ -71,6 +71,14 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     await page.click('nav button[data-t="semana"]');await page.waitForTimeout(200);
     ok('semana: recuperado Q22,699',await sinEsp(page,'#kSem')==='Q22,699');
     ok('semana: muestra la mano de obra recuperada de la semana y del mes',await sinEsp(page,'#kSemMO')==='Q5,000'&&await sinEsp(page,'#kMesMO')==='Q5,000');
+    await page.click('nav button[data-t="hoy"]');await page.waitForTimeout(300);
+    ok('Hoy: la casilla Recuperado esta semana es clicable',!!(await page.$('#kRec')));
+    await page.click('#kRec');await page.waitForTimeout(200);
+    {const d=await page.textContent('#dlg');ok('Recuperado esta semana: lista el caso 5381 con su monto y la autorización parcial',/OT 5381/.test(d)&&/Q22,699/.test(d)&&/Autorización parcial/.test(d)&&/1 caso/.test(d));
+     ok('Recuperado esta semana: sin botón Guardar y con Cerrar',!(await page.$('#dOk'))&&/Cerrar/.test(d));
+     await page.click('#dlg a[data-ver="5381"]');await page.waitForTimeout(200);ok('Recuperado esta semana: Ver caso abre el caso y cierra la ventana',await page.isHidden('#ov')&&/OT 5381/.test(await page.textContent('#caso')));}
+    await page.click('nav button[data-t="hoy"]');await page.click('#kRec');await page.keyboard.press('Escape');ok('Recuperado esta semana: Escape cierra',await page.isHidden('#ov'));
+    await page.click('nav button[data-t="semana"]');await page.waitForTimeout(200);
     ok('bitácora guarda usuario',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.some(b=>b.usuario==='Ricardo'&&/Autorizado/.test(b.resultado))));
     ok('bitácora conserva la entrada de importación',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.length===2));
     ok('asesor no ve Ajustes',!(await page.$('#cSave')));

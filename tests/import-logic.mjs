@@ -7,7 +7,7 @@ const dir=path.dirname(fileURLToPath(import.meta.url));
 const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
-const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores}')(HOY);
+const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores,recuperadoDetalle}')(HOY);
 const xlsx=fs.readdirSync(path.join(dir,'fixtures')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
 const wb=XLSX.read(fs.readFileSync(path.join(dir,'fixtures',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
@@ -99,6 +99,31 @@ ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
   ok('pendientes: agendas de hace más de 14 días se ignoran y gana el día más antiguo',pa.filter(x=>x.startsWith('A')).length,1);
   ok('pendientes: orden por antigüedad',pa[0].startsWith('A'),true);
   ok('pendientes: si ya está en la lista de hoy deja de ser pendiente',L.pendientesAnteriores(casos,{...ag,'2026-10-13':['F','A']},'2026-10-13').some(x=>x.c.ot==='A'),false);
+}
+
+// ---- Detalle de lo recuperado de la semana ----
+{
+  const P=(punto,total,rec)=>({punto,total,mo:total/10,estadoCM:rec?'Aprobado':'Pendiente',recuperada:!!rec});
+  const base={estado:'Recuperado',seg:{},bitacora:[],recuperos:[]};
+  const casos={
+    CM:{...base,ot:'CM',cliente:'Ana',partidas:{a:P('Frenos',1500,true),b:P('Aceite',800,true),c:P('Llantas',3000,false)},recuperos:[{fecha:'2026-10-20',monto:1500,mo:150,tipo:'clear-mechanic',usuario:'Byron'},{fecha:'2026-10-14',monto:800,mo:80,tipo:'clear-mechanic',usuario:'Byron'}]},
+    TOT:{...base,ot:'TOT',cliente:'Beto',partidas:{a:P('Batería',2000,true),b:P('Filtro',500,true)},recuperos:[{fecha:'2026-10-21',monto:2500,mo:250,tipo:'total',usuario:'Edson'}],bitacora:[{fecha:'2026-10-21',resultado:'Autorizado total',nota:'Q2,500 · autorizó todo'}]},
+    PAR:{...base,estado:'En negociación',ot:'PAR',cliente:'Cora',partidas:{a:P('A/C',4000,false)},recuperos:[{fecha:'2026-10-22',monto:1000,mo:100,tipo:'parcial',usuario:'Edson'}],bitacora:[{fecha:'2026-10-22',resultado:'Autorizado parcial',nota:'Q1,000 · autorizó solo el gas'}]},
+    FUERA:{...base,ot:'FUERA',cliente:'Dani',partidas:{a:P('X',900,true)},recuperos:[{fecha:'2026-10-10',monto:900,mo:90,tipo:'clear-mechanic'}]},
+    NADA:{...base,estado:'Pendiente',ot:'NADA',cliente:'Eli',partidas:{}}
+  };
+  const d=L.recuperadoDetalle(casos,'2026-10-19','2026-10-24');
+  ok('recuperado semana: total y autorizaciones',JSON.stringify([d.monto,d.autor,d.casos.length]),JSON.stringify([5000,3,3]));
+  ok('recuperado semana: solo casos con recuperos en el rango',JSON.stringify(d.casos.map(x=>x.c.ot).sort()),JSON.stringify(['CM','PAR','TOT']));
+  ok('recuperado semana: orden por fecha más reciente',JSON.stringify(d.casos.map(x=>x.c.ot)),JSON.stringify(['PAR','TOT','CM']));
+  const cm=d.casos.find(x=>x.c.ot==='CM');
+  ok('recuperado semana: Clear Mechanic trae su punto y monto (y no el de otra semana)',JSON.stringify(cm.items.map(i=>i.puntos.map(p=>p.punto+':'+p.total).join())),JSON.stringify(['Frenos:1500']));
+  const tot=d.casos.find(x=>x.c.ot==='TOT');
+  ok('recuperado semana: total manual lista las partidas recuperadas',JSON.stringify(tot.items[0].puntos.map(p=>p.punto).sort()),JSON.stringify(['Batería','Filtro']));
+  const par=d.casos.find(x=>x.c.ot==='PAR');
+  ok('recuperado semana: parcial manual muestra la nota, sin puntos',JSON.stringify([par.items[0].puntos.length,par.items[0].nota]),JSON.stringify([0,'autorizó solo el gas']));
+  ok('recuperado semana: coincide con el total de la tarjeta (suma de recuperos del rango)',d.monto,Object.values(casos).flatMap(c=>c.recuperos).filter(r=>r.fecha>='2026-10-19'&&r.fecha<='2026-10-24').reduce((a,r)=>a+r.monto,0));
+  ok('recuperado semana: sin recuperos devuelve vacío',L.recuperadoDetalle(casos,'2026-11-01','2026-11-06').casos.length,0);
 }
 
 // ---- Formato nuevo del reporte de Clear Mechanic (encabezado "Fecha / Hora de apertura de Orden") ----
