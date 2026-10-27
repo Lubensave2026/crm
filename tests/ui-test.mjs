@@ -78,7 +78,17 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
      ok('Recuperado esta semana: sin botón Guardar y con Cerrar',!(await page.$('#dOk'))&&/Cerrar/.test(d));
      await page.click('#dlg a[data-ver="5381"]');await page.waitForTimeout(200);ok('Recuperado esta semana: Ver caso abre el caso y cierra la ventana',await page.isHidden('#ov')&&/OT 5381/.test(await page.textContent('#caso')));}
     await page.click('nav button[data-t="hoy"]');await page.click('#kRec');await page.keyboard.press('Escape');ok('Recuperado esta semana: Escape cierra',await page.isHidden('#ov'));
+    await page.click('nav button[data-t="cartera"]');await page.waitForTimeout(200);
+    await page.selectOption('#fEst','Con recuperado');await page.waitForTimeout(200);
+    ok('Cartera: filtro Con recuperado incluye el caso parcial 5381 con su monto recuperado',await page.evaluate(()=>{const r=[...document.querySelectorAll('#cartera tbody tr')];return r.length===1&&/5381/.test(r[0].textContent)&&/Q22,699/.test(r[0].textContent)}));
+    ok('Cartera: la tabla tiene columnas Pendiente y Recuperado',/Pendiente/.test(await page.textContent('#cartera thead'))&&/Recuperado/.test(await page.textContent('#cartera thead')));
+    await page.selectOption('#fEst','Abiertos');
+    await page.click('#cartera button[data-rec="todo"]');await page.waitForTimeout(200);
+    ok('Cartera: Recuperado total abre el detalle por orden con el total',await page.evaluate(()=>{const d=document.querySelector('#dlg').textContent;return /Recuperado total/.test(d)&&/OT 5381/.test(d)&&/Q22,699/.test(d)}));
+    await page.keyboard.press('Escape');
     await page.click('nav button[data-t="semana"]');await page.waitForTimeout(200);
+    await page.click('#semana a[data-rec="sem"]');await page.waitForTimeout(200);ok('Semana: ver detalle de la semana',/OT 5381/.test(await page.textContent('#dlg')));await page.keyboard.press('Escape');
+    await page.click('#semana button[data-rec="mes"]');await page.waitForTimeout(200);ok('Semana: ver detalle del mes',/OT 5381/.test(await page.textContent('#dlg'))&&/Q22,699/.test(await page.textContent('#dlg')));await page.keyboard.press('Escape');
     ok('bitácora guarda usuario',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.some(b=>b.usuario==='Ricardo'&&/Autorizado/.test(b.resultado))));
     ok('bitácora conserva la entrada de importación',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.length===2));
     ok('asesor no ve Ajustes',!(await page.$('#cSave')));
