@@ -7,7 +7,7 @@ const dir=path.dirname(fileURLToPath(import.meta.url));
 const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
-const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores,recuperadoDetalle}')(HOY);
+const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores,recuperadoDetalle,planServicios,tipoServ,parseServ,parseExcl,PROS_DEF,visitasServ,analisisVeh,prospectos,sugerencias,esDiesel,kmEstimado,mensajePros,normPlaca}')(HOY);
 const xlsx=fs.readdirSync(path.join(dir,'fixtures')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
 const wb=XLSX.read(fs.readFileSync(path.join(dir,'fixtures',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
@@ -159,5 +159,92 @@ ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
   for(const r of nueva)if(String(r[iO])==='5381'){r[iO]='9999';r[iE]='Aprobado por Miembro del Equipo'}
   const pn=L.planImport(nueva,structuredClone(base),{hoy:HOY,usuario:'t'});
   ok('orden nueva ya aprobada (otra OT): no crea caso nuevo',pn.nuevos.some(x=>x.ot==='9999'),false);
+}
+// ---- Prospección de servicios de mantenimiento ----
+{
+  const aplicar=(vehs,pl)=>{for(const {key,data} of pl.escribir){const ex=vehs[key]||{};vehs[key]={...ex,...data,serv:{...(ex.serv||{}),...(data.serv||{})}}}};
+  const vehs={};
+  const ps=L.planServicios(rows,vehs,{});
+  ok('servicios: sin error de formato',!!ps.error,false);
+  ok('servicios: hay vehículos con servicio aprobado',ps.stats.vehiculos>50,true);
+  ok('servicios: coinciden los vehículos nuevos con los escritos',ps.stats.nuevos,ps.escribir.length);
+  aplicar(vehs,ps);
+  const tipos=new Set(Object.values(vehs).flatMap(v=>Object.values(v.serv).filter(e=>!e.x).map(e=>e.t)));
+  ok('servicios: solo tipos de la lista',[...tipos].every(t=>['Servicio menor','Servicio intermedio','Servicio mayor','Servicio mayor completo','Caja automática'].includes(t)),true);
+  ok('servicios: reconoce menor, intermedio, mayor completo y caja',['Servicio menor','Servicio intermedio','Servicio mayor completo','Caja automática'].every(t=>tipos.has(t)),true);
+  ok('servicios: toda llave es VIN o placa normalizada',Object.keys(vehs).every(k=>/^[vp][A-Z0-9]{5,17}$/.test(k)),true);
+  ok('servicios: volver a cargar no escribe nada (no duplica)',L.planServicios(rows,structuredClone(vehs),{}).escribir.length,0);
+  ok('servicios: rechazados no cuentan',Object.values(vehs).every(v=>Object.values(v.serv).every(e=>e.f&&e.ot)),true);
+  const ex=L.parseExcl(L.PROS_DEF.excluir),sv=L.parseServ(L.PROS_DEF.servicios);
+  ok('tipo: Servicio menor.',L.tipoServ('Servicio menor.',sv,ex),'Servicio menor');
+  ok('tipo: SERVICIO MAYOR COMPLETO',L.tipoServ('SERVICIO MAYOR COMPLETO',sv,ex),'Servicio mayor completo');
+  ok('tipo: Servicio mayor (no completo)',L.tipoServ('SERVICIO MAYOR',sv,ex),'Servicio mayor');
+  ok('tipo: aceite de transmisión con filtro',L.tipoServ('ACEITE DE TRANSMISION (C/FILTRO)',sv,ex),'Caja automática');
+  ok('tipo: sensor de aceite de caja NO es servicio',L.tipoServ('SENSOR DE PRECION DE ACEITE DE CAJA',sv,ex),null);
+  ok('tipo: cargador de cola de caja NO es servicio',L.tipoServ('Cargador de cola de caja',sv,ex),null);
+  ok('tipo: servicio del turbo NO es servicio',L.tipoServ('Servicio del turbo',sv,ex),null);
+  ok('tipo: estado de fajas NO es servicio',L.tipoServ('ESTADO DE FAJAS',sv,ex),null);
+  ok('placa normalizada',L.normPlaca('p-123 abc'),'P123ABC');
+
+  // Un VIN y una placa sin VIN del mismo vehículo se unen en un solo documento
+  const cab=['OR #','Fecha / Hora de apertura de Orden','Nombre','Apellido','Móvil','Marca','Modelo','Año','VIN','Kilometraje','Placas','Tipo','Punto de Inspección','Cotización - Total','Cotización - M.O.','¿Aprobado o Rechazado?'];
+  const fila=(ot,f,vin,pl,km,pt,tot,est)=>[ot,new Date(f+'T12:00:00'),'Carlos','Mendez','55550000','Toyota','Hilux',2018,vin,km,pl,'Punto de Inspección',pt,'',0,est];
+  const total=(ot,f,vin,pl,km,pt,tot,est)=>{const r=fila(ot,f,vin,pl,km,pt,tot,est);r[11]='Cotización - Total';r[13]=tot;return r};
+  const v1=[cab,fila('1','2025-01-10','','P123ABC',50000,'SERVICIO MENOR',0,'Aprobado por Cliente'),total('1','2025-01-10','','P123ABC',50000,'SERVICIO MENOR',500,'Aprobado por Cliente'),
+    fila('2','2025-08-10','3TMLU4EN5GM000001','P-123 ABC',60000,'SERVICIO INTERMEDIO',0,'Aprobado por Cliente'),total('2','2025-08-10','3TMLU4EN5GM000001','P-123 ABC',60000,'SERVICIO INTERMEDIO',900,'Aprobado por Cliente'),
+    fila('2','2025-08-10','3TMLU4EN5GM000001','P-123 ABC',60000,'FAJA DE TIEMPO',0,'Rechazado'),total('2','2025-08-10','3TMLU4EN5GM000001','P-123 ABC',60000,'FAJA DE TIEMPO',3000,'Rechazado')];
+  const vv={};const pv=L.planServicios(v1,vv,{});aplicar(vv,pv);
+  ok('unión VIN/placa: un solo vehículo',Object.keys(vv).length,1);
+  ok('unión VIN/placa: guarda el VIN',Object.values(vv)[0].vin,'3TMLU4EN5GM000001');
+  ok('unión VIN/placa: dos servicios',Object.values(Object.values(vv)[0].serv).filter(e=>!e.x).length,2);
+  ok('rechazado no cuenta como trabajo hecho',Object.values(Object.values(vv)[0].serv).some(e=>e.t==='Faja de tiempo'),false);
+  ok('último nombre y teléfono',Object.values(vv)[0].nombre+'|'+Object.values(vv)[0].movil,'Carlos Mendez|55550000');
+  ok('monto del servicio',Object.values(Object.values(vv)[0].serv).find(e=>e.t==='Servicio intermedio').m,900);
+
+  // Vencidos y próximos
+  const H='2026-10-28';
+  const mk=(visitas,extra)=>({placa:'P111AAA',nombre:'Ana Lopez',marca:'Honda',modelo:'CR-V',anio:'2016',serv:Object.fromEntries(visitas.map(([f,t,km],i)=>['o'+i+'_'+t,{f,ot:'o'+i,t,km,m:100}])),...(extra||{})});
+  const venc=mk([['2025-01-10','Servicio menor',50000],['2025-07-10','Servicio intermedio',58000],['2025-07-25','Servicio menor',59000]]);
+  ok('visitas: las de menos de 20 días cuentan como una',L.visitasServ(venc).length,2);
+  const a1=L.analisisVeh(venc,H);
+  ok('vencido: último servicio hace 15 meses',a1.estado,'vencido');
+  const a2=L.analisisVeh(mk([['2025-03-01','Servicio menor',40000],['2025-09-01','Servicio intermedio',50000]]),H);
+  ok('vencido: 14 meses sin servicio',a2.estado,'vencido');
+  ok('vencido: meses',a2.meses,13);
+  ok('vencido: frecuencia en días',a2.freq,184);
+  ok('más de 24 meses queda fuera',L.analisisVeh(mk([['2024-06-01','Servicio menor',40000]]),H).estado,null);
+  const a3=L.analisisVeh(mk([['2026-02-01','Servicio menor',40000],['2026-04-01','Servicio intermedio',45000]]),H);
+  ok('próximo: cada 2 meses (mínimo 90 días) y van 210 días',a3.estado,'proximo');
+  ok('reciente: no es candidato',L.analisisVeh(mk([['2026-09-20','Servicio menor',40000]]),H).estado,null);
+  ok('próximo al 85% de su frecuencia (180 d por defecto)',L.analisisVeh(mk([['2026-05-25','Servicio menor',40000]]),H).estado,'proximo');
+  ok('antes del 85% todavía no',L.analisisVeh(mk([['2026-06-15','Servicio menor',40000]]),H).estado,null);
+  const base=mk([['2025-03-01','Servicio menor',40000]]);
+  ok('contacto: mensaje enviado hace 2 días → ya en contacto',L.analisisVeh({...base,contactos:[{f:'2026-10-26',res:'enviado',ts:1}]},H).cont,'contacto');
+  ok('contacto: mensaje enviado hace 10 días → libre otra vez',L.analisisVeh({...base,contactos:[{f:'2026-10-18',res:'enviado',ts:1}]},H).cont,'libre');
+  ok('contacto: agendó cita → en contacto',L.analisisVeh({...base,contactos:[{f:'2026-10-10',res:'agendo',ts:1}]},H).cont,'contacto');
+  ok('contacto: más adelante con fecha futura',L.analisisVeh({...base,contactos:[{f:'2026-10-10',res:'mas-adelante',prox:'2026-12-01',ts:1}]},H).cont,'contacto');
+  ok('contacto: más adelante ya vencido → libre',L.analisisVeh({...base,contactos:[{f:'2026-09-01',res:'mas-adelante',prox:'2026-10-01',ts:1}]},H).cont,'libre');
+  ok('contacto: no tiene el vehículo → descartado',L.analisisVeh({...base,contactos:[{f:'2026-10-10',res:'sin-vehiculo',ts:1}]},H).cont,'descartado');
+  ok('ya vino: sale de la lista',L.analisisVeh({...base,ya:{f:'2026-10-01'}},H).estado,null);
+  ok('descartado antes de un servicio nuevo ya no cuenta',L.analisisVeh({...mk([['2025-03-01','Servicio menor',40000],['2025-10-20','Servicio menor',46000]]),contactos:[{f:'2025-06-01',res:'sin-vehiculo',ts:1}]},H).cont,'libre');
+  // prospectos: ordena, marca caso abierto y quita descartados
+  const casos={5001:{ot:'5001',placa:'P-111 AAA',estado:'Pendiente',partidas:{a:{punto:'a',total:500,mo:100,estadoCM:'Rechazado'}},recuperos:[]}};
+  const lst=L.prospectos({a:base,b:{...base,placa:'P222BBB',contactos:[{f:'2026-10-10',res:'sin-vehiculo',ts:1}]}},casos,undefined,H);
+  ok('prospectos: sin el descartado',lst.length,1);
+  ok('prospectos: marca el caso abierto de la misma placa',lst[0].caso,'5001');
+
+  // Sugerencias
+  const hil={placa:'P1',marca:'Toyota',modelo:'Hilux',anio:'2018',serv:{a:{f:'2025-03-01',ot:'a',t:'Servicio menor',km:90000,m:1},b:{f:'2025-09-01',ot:'b',t:'Servicio mayor',km:99000,m:1}}};
+  ok('diésel: Hilux sí',L.esDiesel(hil,L.PROS_DEF.diesel),true);
+  ok('diésel: CR-V no',L.esDiesel({marca:'Honda',modelo:'CR-V'},L.PROS_DEF.diesel),false);
+  const sg=L.sugerencias(hil,H).map(x=>x.nombre);
+  ok('sugerencia: Hilux con ~110 mil km → faja de tiempo y EGR',sg.includes('Faja de tiempo')&&sg.includes('Limpieza de EGR'),true);
+  ok('sugerencia: Hilux no lleva bujías (es diésel)',sg.includes('Bujías'),false);
+  const gas=L.sugerencias({...hil,marca:'Honda',modelo:'CR-V'},H).map(x=>x.nombre);
+  ok('sugerencia: gasolina no lleva EGR pero sí bujías',!gas.includes('Limpieza de EGR')&&gas.includes('Bujías'),true);
+  const hecho={...hil,serv:{...hil.serv,c:{f:'2025-09-01',ot:'c',t:'Faja de tiempo',km:99000,m:1,x:1}}};
+  ok('sugerencia: si la faja se hizo hace poco, no se sugiere',L.sugerencias(hecho,H).some(x=>x.nombre==='Faja de tiempo'),false);
+  ok('sugerencia: sin kilometraje no sugiere nada',L.sugerencias({marca:'Kia',serv:{a:{f:'2025-03-01',ot:'a',t:'Servicio menor',km:0,m:1}}},H).length,0);
+  ok('mensaje: vencido incluye meses y firma',/Hace 13 meses/.test(L.mensajePros(a2,'Ricardo','Lube N Save Zona 10',[]))&&/Ricardo/.test(L.mensajePros(a2,'Ricardo','Lube N Save Zona 10',[])),true);
 }
 process.exit(fallos?1:0);

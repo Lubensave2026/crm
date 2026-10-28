@@ -97,6 +97,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
 .pill.Recuperado{background:#141414;color:#FFE500;border-color:#141414}
 .pill.En.negociación,.pill.Negociacion{background:var(--yellow);color:#141414;border-color:var(--yellow)}
 .pill.Perdido{color:var(--muted)}
+.ptabs .btn[aria-pressed="true"]{background:#141414;color:#FFE500;border-color:#141414}
 .pill.EnTaller{background:var(--green-bg);color:var(--green);border-color:transparent}
 .done{opacity:.55}
 .sem3{display:flex;gap:4px}
@@ -117,6 +118,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
     <button role="tab" aria-selected="false" data-t="caso">Caso</button>
     <button role="tab" aria-selected="false" data-t="importar">Importar Clear Mechanic</button>
     <button role="tab" aria-selected="false" data-t="semana">Semana</button>
+    <button role="tab" aria-selected="false" data-t="prospeccion">Prospección</button>
     <button role="tab" aria-selected="false" data-t="manual">Manual de usuario<i class="dot" id="manDot" hidden></i></button>
   </nav>
 </div></div>
@@ -143,6 +145,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
   </div>
 </section>
 <section class="scr" id="semana" hidden></section>
+<section class="scr" id="prospeccion" hidden></section>
 <section class="scr" id="manual" hidden></section>
 </main>
 
@@ -190,8 +193,8 @@ const FB_CFG={apiKey:"AIzaSyAf8qbial6VACkhtM6po9N97osPQ-hEnac",authDomain:"crm-l
 const app=initializeApp(FB_CFG),auth=getAuth(app),db=initializeFirestore(app,{ignoreUndefinedProperties:true});
 
 const DEF_CFG={min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'};
-let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null,cierres:[]};
-let USER=null,US=[];const ready={casos:false,agenda:false,cfg:false,enl:false};
+let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null,cierres:[],veh:{}};
+let USER=null,US=[];const ready={casos:false,agenda:false,cfg:false,enl:false,veh:false};
 const gtToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:'America/Guatemala'});
 let TODAY=gtToday();
 const iso=()=>new Date().toISOString();
@@ -237,7 +240,7 @@ function computeAgenda(casos,cfg,hechos){
 
 /* ---- Importación de Clear Mechanic ---- */
 function norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'')}
-const COLS={ot:['or','ot','orden'],fecha:['fechahora','fechahoradeaperturadeorden','fecha'],nombre:['nombre'],apellido:['apellido'],movil:['movil','telefono','celular'],marca:['marca'],modelo:['modelo'],anio:['ano','anio'],km:['kilometraje','km'],placa:['placas','placa'],tipo:['tipo'],punto:['puntodeinspeccion'],partes:['cotpartes'],mo:['cotizacionmo'],total:['cotizaciontotal'],estado:['aprobadoorechazado']};
+const COLS={ot:['or','ot','orden'],fecha:['fechahora','fechahoradeaperturadeorden','fecha'],nombre:['nombre'],apellido:['apellido'],movil:['movil','telefono','celular'],marca:['marca'],modelo:['modelo'],anio:['ano','anio'],km:['kilometraje','km'],placa:['placas','placa'],tipo:['tipo'],punto:['puntodeinspeccion'],partes:['cotpartes'],mo:['cotizacionmo'],total:['cotizaciontotal'],estado:['aprobadoorechazado'],vin:['vin']};
 /* Devuelve el plan de escrituras sin tocar nada: {error} o {stats, nuevos:[{ot,doc}], cambios:[{ot,patch}]} */
 function planImport(rows,casos,o){
   o=o||{};const usuario=o.usuario||'',ahora=o.ahora||Date.now(),HOY=o.hoy||TODAY;
@@ -390,6 +393,156 @@ function recuperadoDetalle(casos,desde,hasta){
   out.sort((a,b)=>b.ult.localeCompare(a.ult)||b.monto-a.monto);
   return {casos:out,monto,autor};
 }
+/* ---- Prospección de servicios de mantenimiento ----
+   Un documento por vehículo (llave: VIN si viene, si no la placa). Solo cuentan los servicios APROBADOS en Clear Mechanic. */
+const nt=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+const hasFrag=(t,f)=>(' '+t+' ').includes(' '+f+' ');
+const PROS_DEF={
+ servicios:'Servicio mayor completo: servicio mayor completo\nServicio mayor: servicio mayor\nServicio intermedio: servicio intermedio\nServicio menor: servicio menor\nCaja automática: servicio de caja|servicio de transmision|aceite de caja|aceite de transmision|transmision automatica|caja automatica',
+ excluir:'sensor|retenedor|cargador|cargadore|selenoide|solenoide|empaque|compresor|turbo|caliper|reparacion|cambio de caja',
+ reglas:'Faja de tiempo | 100000 | * | * | faja de tiempo|kit de tiempo|kit de distribucion|banda de tiempo|cadena de tiempo\nServicio de caja automática | 60000 | * | * | servicio de caja|aceite de caja|aceite de transmision|transmision automatica|caja automatica\nLimpieza de EGR | 80000 | * | si | egr\nLíquido de frenos | 40000 | * | * | liquido de frenos\nRefrigerante | 60000 | * | * | refrigerante|anticongelante\nBujías | 60000 | * | no | bujia\nFiltro de combustible | 40000 | * | si | filtro de combustible|filtro diesel',
+ diesel:'hilux, l200, triton, d-max, dmax, ranger, bt-50, navara, frontier, np300, amarok, fortuner, hiace, urvan, sprinter, canter, nkr, npr, h-1, porter, k2500, starex, montero sport, mu-x, trailblazer, colorado, t60, t70',
+ pct:85,desde:12,hasta:24};
+const VIN_OK=v=>/^[A-HJ-NPR-Z0-9]{11,17}$/.test(v);
+const normPlaca=p=>String(p||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+const PLACA_NO=/^(SINPLACA|NOTIENE|NINGUNA|NOAPLICA|XXXXX+|0+)$/;
+function parseServ(t){return String(t||'').split('\n').map(l=>{const i=l.indexOf(':');if(i<1)return null;const f=l.slice(i+1).split('|').map(nt).filter(Boolean);return f.length?{tipo:l.slice(0,i).trim(),f}:null}).filter(Boolean)}
+const parseExcl=t=>String(t||'').split(/[|\n,]/).map(nt).filter(Boolean);
+function parseReglas(t){return String(t||'').split('\n').map(l=>{const p=l.split('|').map(x=>x.trim());if(p.length<2||!p[0]||!(+p[1]>0))return null;const d=p[3]||'*';return {nombre:p[0],km:+p[1],marca:p[2]||'*',diesel:/^s/i.test(d)?'si':/^n/i.test(d)?'no':'*',pal:p.slice(4).map(nt).filter(Boolean)}}).filter(Boolean)}
+function tipoServ(punto,reglas,excl){const t=nt(punto);if(!t||excl.some(x=>hasFrag(t,x)))return null;for(const r of reglas)if(r.f.some(x=>hasFrag(t,x)))return r.tipo;return null}
+function fechaISO(f){return f instanceof Date?ymd(f):(typeof f==='number'&&f>20000)?new Date(Math.round((f-25569)*864e5)).toISOString().slice(0,10):String(f||'').slice(0,10)}
+
+/* Del reporte de Cotizaciones saca los servicios aprobados por vehículo. Devuelve {error} o {stats, escribir:[{key,data}]} (data se guarda con merge). */
+function planServicios(rows,vehs,o){
+  o=o||{};const P={...PROS_DEF,...(o.pros||{})};
+  const serv=parseServ(P.servicios),excl=parseExcl(P.excluir),reglas=parseReglas(P.reglas);
+  const head=rows[0].map(norm),idx={};
+  for(const k in COLS)idx[k]=head.findIndex(h=>COLS[k].includes(h));
+  const faltan=['ot','punto','total','estado','tipo','fecha'].filter(k=>idx[k]<0);
+  if(faltan.length)return {error:faltan};
+  const g=(r,k)=>idx[k]>=0?r[idx[k]]:'';
+  let filas=0;const O={};
+  for(const r of rows.slice(1)){
+    if(!r||!g(r,'ot'))continue;filas++;
+    const ot=otId(g(r,'ot')),tipo=String(g(r,'tipo')).trim(),punto=String(g(r,'punto')||'').trim();
+    const est=String(g(r,'estado')||''),ec=/aprob/i.test(est)?'A':/rechaz/i.test(est)?'R':'P';
+    const w=O[ot]=O[ot]||{f:fechaISO(g(r,'fecha')),nombre:'',movil:'',marca:'',modelo:'',anio:'',km:0,placa:'',vin:'',pts:{}};
+    const set=(k,v)=>{if(v&&!w[k])w[k]=v};
+    set('nombre',(String(g(r,'nombre')).trim()+' '+String(g(r,'apellido')).trim()).trim());
+    set('movil',String(g(r,'movil')||'').trim());set('marca',String(g(r,'marca')||'').trim());set('modelo',String(g(r,'modelo')||'').trim());set('anio',String(g(r,'anio')||'').trim());
+    set('placa',String(g(r,'placa')||'').trim());set('vin',String(g(r,'vin')||'').toUpperCase().replace(/[^A-Z0-9]/g,''));
+    w.km=Math.max(w.km,Math.round(+g(r,'km')||0));
+    if(!punto)continue;
+    const p=w.pts[punto]=w.pts[punto]||{ec:'P',total:0,tot:false};
+    if(/^punto/i.test(tipo)){if(!p.tot)p.ec=ec}
+    else if(/total/i.test(tipo)){p.ec=ec;p.tot=true;p.total=+g(r,'total')||0}
+  }
+  const ix={vin:{},placa:{}};
+  for(const [k,v] of Object.entries(vehs||{})){if(v.vin)ix.vin[v.vin]=k;const pl=normPlaca(v.placa);if(pl)ix.placa[pl]=k}
+  const N={};let sinId=0,desde='',hasta='';
+  for(const ot in O){
+    const w=O[ot];if(w.f&&(!desde||w.f<desde))desde=w.f;if(w.f>hasta)hasta=w.f;
+    const ents={};
+    for(const [punto,p] of Object.entries(w.pts)){
+      if(p.ec!=='A')continue;
+      const ts=tipoServ(punto,serv,excl);
+      if(ts){const id=ot+'_'+norm(ts);const e=ents[id]=ents[id]||{f:w.f,ot,t:ts,km:w.km,m:0};e.m+=p.total}
+      const tp=nt(punto);
+      for(const r of reglas)if(r.pal.some(x=>hasFrag(tp,x))){const id=ot+'_x_'+norm(r.nombre);const e=ents[id]=ents[id]||{f:w.f,ot,t:r.nombre,km:w.km,m:0,x:1};e.m+=p.total}
+    }
+    if(!Object.keys(ents).length)continue;
+    const vin=VIN_OK(w.vin)?w.vin:'',pl=normPlaca(w.placa),plOk=pl.length>=5&&!PLACA_NO.test(pl)?pl:'';
+    let key=(vin&&ix.vin[vin])||(plOk&&ix.placa[plOk])||null;
+    if(!key){if(vin)key='v'+vin;else if(plOk)key='p'+plOk;else{sinId++;continue}}
+    if(vin)ix.vin[vin]=key;if(plOk)ix.placa[plOk]=key;
+    const n=N[key]=N[key]||{ents:{},idf:'',ident:null,vin:'',placa:''};
+    Object.assign(n.ents,ents);
+    if(vin)n.vin=vin;if(plOk)n.placa=plOk;
+    if(Object.values(ents).some(e=>!e.x)&&w.f>=n.idf){n.idf=w.f;n.ident={nombre:w.nombre,movil:w.movil,marca:w.marca,modelo:w.modelo,anio:w.anio}}
+  }
+  const escribir=[];let nuevos=0,actualizados=0,servicios=0,vehiculos=0;
+  for(const key in N){
+    const n=N[key],ex=(vehs||{})[key];
+    if(!Object.values(n.ents).some(e=>!e.x)&&!(ex&&Object.values(ex.serv||{}).some(e=>!e.x)))continue;
+    vehiculos++;
+    const cambios={};
+    for(const id in n.ents){const e=n.ents[id],a=ex&&ex.serv&&ex.serv[id];
+      if(!a||['f','t','km','m'].some(k=>(a[k]||0)!==(e[k]||0))||(a.x||0)!==(e.x||0))cambios[id]=e}
+    const data={key};let cambio=Object.keys(cambios).length>0;
+    if(cambio)data.serv=cambios;
+    const ult=Object.values({...(ex&&ex.serv||{}),...n.ents}).filter(e=>!e.x).reduce((a,e)=>e.f>a?e.f:a,'');
+    if(ult&&ult!==(ex&&ex.ult)){data.ult=ult;cambio=true}
+    if(n.ident&&(!ex||n.idf>=(ex.ult||''))){
+      for(const k in n.ident)if(n.ident[k]&&n.ident[k]!==(ex&&ex[k])){data[k]=n.ident[k];cambio=true}}
+    if(n.vin&&n.vin!==(ex&&ex.vin)){data.vin=n.vin;cambio=true}
+    if(n.placa&&n.placa!==(ex&&ex.placa)){data.placa=n.placa;cambio=true}
+    if(!cambio)continue;
+    ex?actualizados++:nuevos++;
+    servicios+=Object.values(cambios).filter(e=>!e.x).length;
+    escribir.push({key,data});
+  }
+  return {stats:{filas,ordenes:Object.keys(O).length,vehiculos,nuevos,actualizados,servicios,sinId,desde,hasta},escribir};
+}
+
+/* Visitas de servicio: fechas distintas; las que están a menos de 20 días cuentan como una sola visita */
+function visitasServ(v){
+  const fs=[...new Set(Object.values(v.serv||{}).filter(s=>!s.x).map(s=>s.f))].sort(),out=[];
+  for(const f of fs){if(out.length&&daysBetween(out[out.length-1],f)<20)out[out.length-1]=f;else out.push(f)}
+  return out;
+}
+function kmEstimado(v,hoy){
+  const es=Object.values(v.serv||{}).filter(e=>e.km>0).sort((a,b)=>a.f.localeCompare(b.f));
+  if(!es.length)return null;
+  const p=es[0],u=es[es.length-1],d=daysBetween(p.f,u.f);let rate=30;
+  if(d>=60&&u.km>p.km)rate=Math.min(150,Math.max(5,(u.km-p.km)/d));
+  return {km:Math.round(u.km+rate*Math.max(0,daysBetween(u.f,hoy))),ultKm:u.km,f:u.f};
+}
+const esDiesel=(v,txt)=>{const t=nt((v.marca||'')+' '+(v.modelo||''));return String(txt||'').split(/[,\n]/).map(nt).filter(Boolean).some(f=>hasFrag(t,f))};
+function sugerencias(v,hoy,P){
+  P={...PROS_DEF,...(P||{})};const est=kmEstimado(v,hoy);if(!est)return [];
+  const die=esDiesel(v,P.diesel),out=[];
+  for(const r of parseReglas(P.reglas)){
+    if(r.marca!=='*'&&!hasFrag(nt(v.marca),nt(r.marca)))continue;
+    if(r.diesel==='si'&&!die)continue;if(r.diesel==='no'&&die)continue;
+    const hechos=Object.values(v.serv||{}).filter(e=>e.t===r.nombre&&e.km>0).map(e=>e.km);
+    const last=hechos.length?Math.max(...hechos):0;
+    if(est.km-last>=r.km)out.push({nombre:r.nombre,cada:r.km,ultimo:last||null});
+  }
+  return out;
+}
+/* Un vehículo: ¿vencido (12 a 24 meses sin servicio) o próximo (ya casi le toca según su frecuencia)? */
+function analisisVeh(v,hoy,P){
+  P={...PROS_DEF,...(P||{})};
+  const vis=visitasServ(v);if(!vis.length)return null;
+  let ult=vis[vis.length-1];if(v.ya&&v.ya.f&&v.ya.f>ult)ult=v.ya.f;
+  const dd=daysBetween(ult,hoy),dDesde=Math.round(P.desde*365/12),dHasta=Math.round(P.hasta*365/12);
+  let freq=null;if(vis.length>=2){let s=0;for(let i=1;i<vis.length;i++)s+=daysBetween(vis[i-1],vis[i]);freq=Math.round(s/(vis.length-1))}
+  const fe=Math.min(365,Math.max(90,freq||180));
+  const ven=dd>=dDesde&&dd<=dHasta,pro=!ven&&dd<dDesde&&dd>=Math.round(fe*P.pct/100);
+  const cs=[...(v.contactos||[])].sort((a,b)=>(a.ts||0)-(b.ts||0)),lc=cs[cs.length-1]||null;
+  let cont='libre';
+  if(lc&&lc.f>=ult){
+    if(lc.res==='sin-vehiculo')cont='descartado';
+    else if(lc.res==='agendo'&&daysBetween(lc.f,hoy)<=45)cont='contacto';
+    else if(lc.res==='mas-adelante'&&lc.prox&&lc.prox>hoy)cont='contacto';
+    else if(lc.res==='enviado'&&daysBetween(lc.f,hoy)<=7)cont='contacto';
+    else if(lc.res==='sin-respuesta'&&daysBetween(lc.f,hoy)<=3)cont='contacto';
+  }
+  const tipos=[...new Set(Object.values(v.serv||{}).filter(e=>!e.x&&e.f===vis[vis.length-1]).map(e=>e.t))];
+  return {v,key:v.key,ult,dd,meses:Math.floor(dd/30.4375),freq,vis:vis.length,estado:ven?'vencido':pro?'proximo':null,cont,tipos,intentos:cs.filter(c=>c.f>=ult&&c.res!=='ya-vino').length};
+}
+function prospectos(vehs,casos,P,hoy){
+  const ab={};for(const c of Object.values(casos||{}))if(abierto(c)&&montoCaso(c)>0){const pl=normPlaca(c.placa);if(pl)ab[pl]=c.ot}
+  return Object.entries(vehs||{}).map(([k,v])=>analisisVeh({...v,key:k},hoy,P)).filter(a=>a&&a.estado&&a.cont!=='descartado')
+    .map(a=>({...a,caso:ab[normPlaca(a.v.placa)]||null}))
+    .sort((a,b)=>a.estado===b.estado?(a.estado==='vencido'?a.dd-b.dd:b.dd-a.dd):a.estado==='vencido'?-1:1);
+}
+function mensajePros(a,asesor,sede,sug){
+  const n=(a.v.nombre||'').split(' ')[0]||'[Nombre]',veh=[a.v.marca,a.v.modelo,a.v.anio].filter(Boolean).join(' ')||'vehículo',tr=sug.slice(0,2).map(s=>s.nombre.toLowerCase());
+  const extra=tr.length?` Además, por su kilometraje conviene revisar ${tr.join(' y ')}.`:'';
+  if(a.estado==='vencido')return `Hola, ${n}. Le saluda ${asesor} de ${sede}. Hace ${a.meses} meses que no vemos su ${veh} y queremos cuidar que siga en buen estado.${extra} Tenemos espacio esta semana, ¿le agendo su servicio?`;
+  return `Hola, ${n}. Le saluda ${asesor} de ${sede}. Ya se acerca el momento del próximo servicio de su ${veh} (el último fue hace ${a.meses} ${a.meses===1?'mes':'meses'}).${extra} ¿Le reservo una cita?`;
+}
 /*@PURA-FIN*/
 
 /* ================= DATOS EN LA NUBE ================= */
@@ -410,7 +563,7 @@ function startSync(){
   unsubs.push(onSnapshot(doc(db,'crm_config','zona10'),s=>{S.cfg={...DEF_CFG,...(s.exists()?s.data():{})};ready.cfg=true;scheduleRender()},syncErr));
   unsubs.push(onSnapshot(query(collection(db,'crm_importaciones'),orderBy('creada','desc'),limit(10)),snap=>{S.imports=snap.docs.map(d=>d.data());scheduleRender()},syncErr));
 }
-function stopSync(){unsubs.splice(0).forEach(u=>u());S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null,cierres:[]};ready.casos=ready.agenda=ready.cfg=ready.enl=false}
+function stopSync(){unsubs.splice(0).forEach(u=>u());S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null,cierres:[],veh:{}};ready.casos=ready.agenda=ready.cfg=ready.enl=ready.veh=false}
 
 const canAct=()=>USER&&USER.rol!=='consulta';
 const isJefe=()=>USER&&USER.rol==='jefe';
@@ -606,6 +759,7 @@ async function importarCotizaciones(rows,archivo,box){
    <div class="panel" id="impCart"></div>`;
   toast('Cotizaciones importadas');
   rehacerAgendaTrasImport();
+  try{const vs=await guardarVehiculos(rows,archivo,null);if(vs)box.insertAdjacentHTML('beforeend',`<p class="sm">Prospección: ${pl(vs.servicios,'servicio nuevo','servicios nuevos')} en ${pl(vs.vehiculos,'vehículo','vehículos')} (historial de mantenimiento).</p>`)}catch(e){}
 }
 async function importarEnlaces(rows,archivo,box){
   if(!ready.casos||!ready.enl){box.innerHTML=vacio('Todavía no hay conexión con Firebase','Espera unos segundos y vuelve a intentarlo.');return}
@@ -861,8 +1015,149 @@ function renderImportar(){
   box.innerHTML=(u?`Última carga de cotizaciones: <b>${fmtD(u.fecha)}</b> · ${esc(u.archivo||'')} · ${u.nuevos} nuevos, ${u.recuperados} recuperados detectados · por ${esc(u.usuario||'—')}`:'Todavía no se ha cargado ningún reporte de cotizaciones.')+'<br>'+(e?`Última carga de enlaces: <b>${fmtD(e.fecha)}</b> · ${esc(e.archivo||'')} · por ${esc(e.usuario||'—')}`:'Todavía no se han cargado los enlaces (Formas de Inspección).');
   const c=$('#impCart');if(c){const ab=Object.values(S.casos).filter(abierto);c.innerHTML=`<b>Cartera abierta: ${ab.length} casos · <span id="kCart">${Q(ab.reduce((a,x)=>a+montoCaso(x),0))}</span></b><div class="acts"><button class="btn k1" data-go="hoy">Ver la agenda de hoy</button><button class="btn" data-go="cartera">Ver cartera</button></div>`}
 }
-function render(){if(!USER)return;({hoy:renderHoy,cartera:renderCartera,caso:renderCaso,semana:renderSemana,importar:renderImportar,manual:renderManual})[tab]()}
-let rq=0;function scheduleRender(){if(rq)return;rq=requestAnimationFrame(()=>{rq=0;const a=document.activeElement;if(a&&a.closest&&a.closest('#semana')&&/INPUT|SELECT/.test(a.tagName))return;render()})}
+/* ================= PROSPECCIÓN DE SERVICIOS DE MANTENIMIENTO ================= */
+let prosTab='vencido',prosBus='',prosMarca='',prosDie='',pResHtml='',vehUnsub=null,vehWait=null;
+const prosCfg=()=>({...PROS_DEF,...(S.cfg.pros||{})});
+function ensureVeh(){
+  if(ready.veh)return Promise.resolve();
+  if(!vehWait){
+    vehWait=new Promise(res=>{
+      vehUnsub=onSnapshot(collection(db,'crm_vehiculos'),snap=>{
+        snap.docChanges().forEach(d=>{if(d.type==='removed')delete S.veh[d.doc.id];else S.veh[d.doc.id]=d.doc.data()});
+        if(!ready.veh){ready.veh=true;res()}scheduleRender();
+      },e=>{syncErr(e);res()});
+    });
+    unsubs.push(()=>{vehUnsub&&vehUnsub();vehUnsub=null;vehWait=null});
+  }
+  return vehWait;
+}
+const fmtDA=d=>{if(!d)return '—';const [y,m,dd]=d.split('-');return +dd+' '+MES[m-1]+' '+y};
+const haceTxt=a=>a.dd<60?'hace '+a.dd+' días':'hace '+a.meses+' meses';
+const nomVeh=v=>[v.marca,v.modelo,v.anio].filter(Boolean).join(' ')||'—';
+function pViews(){
+  const P=prosCfg(),all=prospectos(S.veh,S.casos,P,TODAY);
+  return {P,all,ven:all.filter(a=>a.estado==='vencido'&&a.cont==='libre'),pro:all.filter(a=>a.estado==='proximo'&&a.cont==='libre'),con:all.filter(a=>a.cont==='contacto')};
+}
+function pLista(){
+  const {P,all,ven,pro,con}=pViews();
+  let l=prosTab==='vencido'?ven:prosTab==='proximo'?pro:prosTab==='contacto'?con:all;
+  const q=nt(prosBus);
+  if(q)l=l.filter(a=>nt([a.v.nombre,a.v.placa,a.v.marca,a.v.modelo,a.v.vin].join(' ')).includes(q)||normPlaca(a.v.placa).includes(normPlaca(prosBus)));
+  if(prosMarca)l=l.filter(a=>nt(a.v.marca)===nt(prosMarca));
+  if(prosDie)l=l.filter(a=>esDiesel(a.v,P.diesel)===(prosDie==='si'));
+  const sh=l.slice(0,150);
+  if(!l.length)return vacio('No hay vehículos en esta lista','Prueba con otro filtro, o carga el historial de servicios más abajo.');
+  return `<div class="tw"><table><thead><tr><th>Cliente · vehículo</th><th>Último servicio</th><th>Frecuencia</th><th>Sugerencia</th></tr></thead><tbody>
+  ${sh.map(a=>{const sg=sugerencias(a.v,TODAY,P),die=esDiesel(a.v,P.diesel);
+   return `<tr class="click" data-vh="${esc(a.key)}"><td><span class="nm">${esc(a.v.nombre||'Sin nombre')}</span><br><span class="sm">${esc(a.v.placa||'sin placa')} · ${esc(nomVeh(a.v))}${die?' · diésel':''}</span>${a.caso?`<br><span class="pill">Ya tiene caso de cotización (OT ${esc(a.caso)})</span>`:''}${a.cont==='contacto'?'<br><span class="pill">Ya en contacto</span>':''}</td>
+   <td>${esc(a.tipos.join(' + ')||'Servicio')}<br><span class="sm">${haceTxt(a)}${a.estado==='vencido'?'':' · próximo'}</span></td>
+   <td>${a.freq?'cada '+Math.max(1,Math.round(a.freq/30.4375))+' meses':'—'}<br><span class="sm">${pl(a.vis,'visita','visitas')}</span></td>
+   <td>${sg.length?sg.slice(0,2).map(s=>`<span class="pill">${esc(s.nombre)}</span>`).join(' '):'<span class="pill">Servicio de mantenimiento</span>'}</td></tr>`}).join('')}
+  </tbody></table></div>${l.length>sh.length?`<p class="sm">Mostrando ${sh.length} de ${l.length}. Usa la búsqueda o los filtros para ver el resto.</p>`:''}`;
+}
+function renderProspeccion(){
+  const el=$('#prospeccion');
+  if(!ready.veh){ensureVeh();el.innerHTML=`<div><h1>Prospección de servicios de mantenimiento</h1><p class="lead">Cargando el historial de vehículos…</p></div>`;return}
+  const {P,ven,pro,con}=pViews(),total=Object.keys(S.veh).length,u=S.cfg.prosUlt;
+  const marcas=[...new Set(Object.values(S.veh).map(v=>(v.marca||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const desde=Object.values(S.veh).flatMap(v=>Object.values(v.serv||{})).reduce((a,e)=>!a||e.f<a?e.f:a,'');
+  const corto=desde&&daysBetween(desde,TODAY)<Math.round(P.desde*365/12)+30;
+  const tabs=[['vencido','Vencidos '+P.desde+' a '+P.hasta+' meses',ven.length],['proximo','Próximos a servicio',pro.length],['contacto','Ya en contacto',con.length],['todos','Todos',ven.length+pro.length+con.length]];
+  el.innerHTML=`<div><h1>Prospección de servicios de mantenimiento</h1><p class="lead">Clientes que ya vinieron a servicio (menor, intermedio, mayor o caja automática, solo lo aprobado) y que no han regresado, o a los que ya casi les toca. Toca un cliente para ver su historial y su mensaje.</p></div>
+  <div class="ptabs acts">${tabs.map(t=>`<button class="btn" data-ptab="${t[0]}" aria-pressed="${prosTab===t[0]}">${t[1]} · <b>${t[2]}</b></button>`).join('')}</div>
+  <div class="cfg" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+   <label>Buscar<input id="pBus" placeholder="Placa, cliente o modelo" value="${esc(prosBus)}"></label>
+   <label>Marca<select id="pMarca"><option value="">Todas</option>${marcas.map(m=>`<option ${nt(m)===nt(prosMarca)?'selected':''}>${esc(m)}</option>`).join('')}</select></label>
+   <label>Combustible<select id="pDie"><option value="">Todos</option><option value="si" ${prosDie==='si'?'selected':''}>Solo diésel</option><option value="no" ${prosDie==='no'?'selected':''}>Sin diésel</option></select></label></div>
+  <div id="pLista">${total?pLista():vacio('Todavía no hay historial de servicios','Descarga en Clear Mechanic el “Reporte de Actividad – Cotizaciones” desde el 1 de enero de 2025 y cárgalo aquí abajo.')}</div>
+  ${corto?`<div class="msg">El historial cargado empieza el <b>${fmtDA(desde)}</b>: todavía no cubre ${P.desde} meses completos, por eso la lista de vencidos puede estar incompleta. Carga un reporte más antiguo para completarla.</div>`:''}
+  ${canAct()?`<div class="panel"><h2>Cargar historial de servicios</h2>
+   <p class="sm">Sube el reporte de Cotizaciones de Clear Mechanic con el rango largo (desde el 1 de enero de 2025). <b>No crea casos de recuperación ni toca la cartera</b>: solo arma el historial de servicios por vehículo. Se puede volver a subir sin duplicar. La carga semanal de Importar también lo va actualizando.</p>
+   <label class="drop" id="dropP" for="fileP"><b>Arrastra aquí el Excel o haz clic para buscarlo</b></label><input type="file" id="fileP" accept=".xlsx,.xls,.csv" hidden>
+   <div class="sm">${u?`Última carga de historial: <b>${fmtD(u.fecha)}</b> · ${esc(u.archivo||'')} · ${u.vehiculos} vehículos, ${u.servicios} servicios nuevos · por ${esc(u.usuario||'—')}.`:'Todavía no se ha cargado historial.'} Vehículos con historial: <b>${total}</b>.</div><div id="pRes">${pResHtml}</div></div>`:''}
+  ${isJefe()?`<div class="panel"><h2>Ajustes de prospección</h2>
+   <p class="sm">Solo el jefe de taller. Los cambios en las palabras de búsqueda se aplican a los reportes que cargues desde ahora; los kilómetros, la marca y el diésel se aplican de inmediato.</p>
+   <div class="cfg"><label>“Próximos” desde (% de su frecuencia)<input id="p_pct" type="number" min="50" max="100" value="${P.pct}"></label><label>Vencidos desde (meses)<input id="p_desde" type="number" min="3" max="36" value="${P.desde}"></label><label>Hasta (meses)<input id="p_hasta" type="number" min="6" max="60" value="${P.hasta}"></label></div>
+   <label class="sm"><b>Qué cuenta como servicio</b> (una línea por tipo: Nombre: palabra|palabra)<textarea id="p_serv" rows="6" style="width:100%;font:13px var(--mono)">${esc(P.servicios)}</textarea></label>
+   <label class="sm"><b>Palabras que NO cuentan como servicio</b> (separadas por |)<textarea id="p_excl" rows="2" style="width:100%;font:13px var(--mono)">${esc(P.excluir)}</textarea></label>
+   <label class="sm"><b>Trabajos preventivos sugeridos</b> (una línea: Trabajo | cada cuántos km | marca o * | diésel: si, no o * | palabras con las que se detecta que ya se hizo)<textarea id="p_reg" rows="9" style="width:100%;font:13px var(--mono)">${esc(P.reglas)}</textarea></label>
+   <label class="sm"><b>Modelos diésel</b> (separados por coma)<textarea id="p_die" rows="3" style="width:100%;font:13px var(--mono)">${esc(P.diesel)}</textarea></label>
+   <div class="acts"><button class="btn k1" id="pSave">Guardar ajustes de prospección</button><button class="btn" id="pDef">Volver a la propuesta inicial</button></div></div>`:''}`;
+}
+function dlgVeh(key){
+  const v0=S.veh[key];if(!v0)return;const P=prosCfg(),v={...v0,key},a=analisisVeh(v,TODAY,P);if(!a)return;
+  const sg=sugerencias(v,TODAY,P),die=esDiesel(v,P.diesel),ped=canAct();
+  const sede='Lube N Save Zona 10',msg=mensajePros(a,S.cfg.asesor,sede,sg);
+  const d=(v.movil||'').replace(/\D/g,''),link=d.length>=8?'https://wa.me/'+(d.length===8?'502'+d:d)+'?text='+encodeURIComponent(msg):null;
+  const hist=Object.values(v.serv||{}).sort((x,y)=>y.f.localeCompare(x.f)||(x.x||0)-(y.x||0));
+  const est=kmEstimado(v,TODAY),cs=[...(v.contactos||[])].sort((x,y)=>(y.ts||0)-(x.ts||0));
+  const RES={enviado:'Mensaje enviado','sin-respuesta':'Sin respuesta',agendo:'Agendó cita','mas-adelante':'Más adelante','sin-vehiculo':'No tiene el vehículo','ya-vino':'Ya vino'};
+  $('#dlg').innerHTML=`<h2>${esc(v.nombre||'Sin nombre')} · ${esc(v.placa||'sin placa')}</h2>
+   <p class="sm">${esc(nomVeh(v))}${die?' · diésel':''}${v.movil?' · '+esc(v.movil):''}${v.vin?' · VIN '+esc(v.vin):''}</p>
+   ${a.estado?`<p><b>${a.estado==='vencido'?'Vencido':'Próximo a servicio'}</b>: último servicio (${esc(a.tipos.join(' + ').toLowerCase())}) el ${fmtDA(a.ult)} (${haceTxt(a)})${est?` · unos ${est.km.toLocaleString('es-GT')} km estimados hoy`:''}.</p>`:''}
+   ${a.v.ya&&a.v.ya.f?`<p class="sm">Un asesor marcó “ya vino” el ${fmtDA(a.v.ya.f)}${a.v.ya.u?' ('+esc(a.v.ya.u)+')':''}.</p>`:''}
+   ${(()=>{const c=Object.values(S.casos).find(x=>abierto(x)&&montoCaso(x)>0&&normPlaca(x.placa)&&normPlaca(x.placa)===normPlaca(v.placa));return c?`<p class="msg">Ya tiene un caso abierto de cotización (OT ${esc(c.ot)}, ${Q(montoCaso(c))}). <a href="#" data-ver="${esc(c.ot)}">Ver caso</a> · evita llamarlo dos veces por temas distintos.</p>`:''})()}
+   <div class="steps" style="grid-template-columns:repeat(3,1fr)"><div class="step"><span class="num">${a.vis}</span><b>${a.vis===1?'visita':'visitas'} de servicio</b></div><div class="step"><span class="num">${a.freq?Math.max(1,Math.round(a.freq/30.4375)):'—'}</span><b>meses entre visitas</b></div><div class="step"><span class="num">${sg.length||'—'}</span><b>${sg.length===1?'trabajo sugerido':'trabajos sugeridos'}</b></div></div>
+   ${sg.length?`<p class="sm"><b>Sugerencias:</b> ${sg.map(s=>esc(s.nombre)+(s.ultimo?' (último a los '+s.ultimo.toLocaleString('es-GT')+' km)':' (sin registro previo)')).join(' · ')}</p>`:''}
+   <div class="tw"><table><thead><tr><th>Fecha</th><th>Trabajo</th><th>Km</th><th style="text-align:right">Monto</th></tr></thead><tbody>${hist.map(e=>`<tr><td>${fmtDA(e.f)}</td><td>${esc(e.t)}${e.x?' <span class="sm">(trabajo puntual)</span>':''}<br><span class="sm">OT ${esc(e.ot)}</span></td><td>${e.km?e.km.toLocaleString('es-GT'):'—'}</td><td class="n">${e.m?Q(e.m):'—'}</td></tr>`).join('')}</tbody></table></div>
+   <div class="msg" id="pMsg">${esc(msg)}</div>
+   ${cs.length?`<p class="sm"><b>Contactos:</b> ${cs.slice(0,4).map(c=>fmtDA(c.f)+' · '+esc(RES[c.res]||c.res)+(c.u?' · '+esc(c.u):'')+(c.nota?' · '+esc(c.nota):'')).join('<br>')}</p>`:''}
+   ${ped?`<div class="acts">${link?`<a class="btn k1" href="${esc(link)}" target="_blank" rel="noopener">Abrir WhatsApp</a>`:''}<button class="btn" data-pcopy="1">Copiar mensaje</button><button class="btn" data-pres="enviado" data-pk="${esc(key)}">Mensaje enviado</button><button class="btn" data-pres="sin-respuesta" data-pk="${esc(key)}">Sin respuesta</button><button class="btn" data-pres="agendo" data-pk="${esc(key)}">Agendó cita</button><button class="btn" data-pres="mas-adelante" data-pk="${esc(key)}">Más adelante</button><button class="btn" data-pres="ya-vino" data-pk="${esc(key)}">Ya vino</button><button class="btn" data-pres="sin-vehiculo" data-pk="${esc(key)}">No tiene el vehículo</button></div>`:'<p class="sm">Tu usuario es de consulta: puedes ver la información, pero no registrar contactos.</p>'}
+   <div class="acts" style="justify-content:flex-end"><button class="btn" id="dCancel">Cerrar</button></div>`;
+  $('#ov').hidden=false;$('#dCancel').onclick=closeDlg;
+}
+async function guardarContactoVeh(key,datos,res,nota,prox){
+  const e={f:TODAY,res,nota:nota||'',u:USER.nombre,ts:Date.now()};if(prox)e.prox=prox;
+  try{await setDoc(doc(db,'crm_vehiculos',key),{...datos,contactos:arrayUnion(e),actualizado:iso()},{merge:true});return true}
+  catch(err){toast('No se pudo guardar: '+(err.code||err.message));return false}
+}
+function accionVeh(key,res){
+  if(!canAct()||!S.veh[key])return;
+  const ok=()=>{toast('Registrado');renderProspeccion()};
+  if(res==='enviado'||res==='sin-respuesta'||res==='agendo'){closeDlg();guardarContactoVeh(key,{},res).then(k=>k&&ok());return}
+  if(res==='mas-adelante'){openDlg(`<h2>Más adelante</h2><label>Volver a contactar el<input id="pD" type="date" value="${addDays(TODAY,30)}"></label><label>Nota<input id="pN" placeholder="Ej.: me pidió escribirle después de vacaciones"></label>`,()=>{const d=$('#pD').value;if(!d||d<=TODAY){toast('Elige una fecha futura');return false}guardarContactoVeh(key,{},res,$('#pN').value,d).then(k=>k&&ok())});return}
+  if(res==='ya-vino'){openDlg(`<h2>Ya vino a servicio</h2><p class="sm">Úsalo cuando el cliente sí hizo su servicio pero no quedó cotizado en Clear Mechanic (por eso no aparece en el reporte).</p><label>Fecha del servicio<input id="pD" type="date" value="${TODAY}" max="${TODAY}"></label><label>Nota<input id="pN" placeholder="Ej.: servicio menor sin cotización"></label>`,()=>{const d=$('#pD').value;if(!d||d>TODAY){toast('Elige la fecha del servicio');return false}guardarContactoVeh(key,{ya:{f:d,u:USER.nombre,nota:$('#pN').value||''}},res,$('#pN').value).then(k=>k&&ok())});return}
+  if(res==='sin-vehiculo'){openDlg(`<h2>No tiene el vehículo</h2><p class="sm">El vehículo sale de las listas de prospección.</p><label>Nota<input id="pN" placeholder="Ej.: lo vendió"></label>`,()=>{guardarContactoVeh(key,{},res,$('#pN').value).then(k=>k&&ok())});return}
+}
+/* Guarda el historial de servicios por vehículo. box=null: silencioso (carga semanal de Importar). */
+async function guardarVehiculos(rows,archivo,box,historial){
+  await ensureVeh();
+  const plan=planServicios(rows,S.veh,{pros:S.cfg.pros});
+  if(plan.error){if(box)box.innerHTML=vacio('El archivo no tiene el formato esperado','Faltan columnas: '+plan.error.join(', ')+'. Descarga el “Reporte de Actividad – Cotizaciones” de Clear Mechanic.');return null}
+  if(box)box.innerHTML=`<div class="panel"><b class="prog">Guardando historial en Firebase…</b></div>`;
+  for(let i=0;i<plan.escribir.length;i+=450){
+    const b=writeBatch(db);plan.escribir.slice(i,i+450).forEach(({key,data})=>b.set(doc(db,'crm_vehiculos',key),data,{merge:true}));
+    if(box)box.querySelector('.prog').textContent='Guardando historial en Firebase… '+Math.min(i+450,plan.escribir.length)+' de '+plan.escribir.length;
+    await b.commit();
+  }
+  const s=plan.stats;
+  if(historial){
+    try{await setDoc(doc(db,'crm_config','zona10'),{prosUlt:{fecha:TODAY,creada:iso(),archivo,filas:s.filas,vehiculos:s.vehiculos,servicios:s.servicios,desde:s.desde,hasta:s.hasta,usuario:USER.nombre}},{merge:true})}catch(_){}
+  }
+  if(box)box.innerHTML=`<h2>Historial · ${esc(archivo)}</h2><div class="steps">
+   <div class="step"><span class="num">${s.filas.toLocaleString('es-GT')}</span><b>filas leídas</b><span class="sm">${s.ordenes} órdenes del ${fmtDA(s.desde)} al ${fmtDA(s.hasta)}</span></div>
+   <div class="step"><span class="num">${s.vehiculos}</span><b>vehículos con servicio</b><span class="sm">${s.nuevos} nuevos · ${s.actualizados} actualizados</span></div>
+   <div class="step"><span class="num">${s.servicios}</span><b>servicios nuevos guardados</b><span class="sm">Solo servicios aprobados</span></div>
+   <div class="step"><span class="num">${s.sinId}</span><b>órdenes sin placa ni VIN</b><span class="sm">No se pueden asignar a un vehículo</span></div></div>`;
+  return s;
+}
+async function procesarHistorial(files){
+  if(!canAct()||!files.length)return;
+  if(!window.XLSX){toast('No se pudo cargar el lector de Excel');return}
+  const res=$('#pRes');res.innerHTML='';pResHtml='';
+  for(const file of files){
+    const box=document.createElement('div');box.className='impBlock';res.append(box);
+    try{
+      const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
+      if(tipoReporte(rows)!=='cotizaciones'){box.innerHTML=vacio('Este archivo no es el reporte de Cotizaciones','El historial se arma con el “Reporte de Actividad – Cotizaciones”.');continue}
+      const s=await guardarVehiculos(rows,file.name,box,true);if(s)toast('Historial guardado');
+    }catch(e){box.innerHTML=vacio('No se pudo guardar el historial',esc(e.code||e.message)+'. Puedes volver a subir el mismo archivo: no duplica.')}
+    pResHtml+=box.outerHTML;const r=$('#pRes');if(r)r.innerHTML=pResHtml;
+  }
+}
+function render(){if(!USER)return;({hoy:renderHoy,cartera:renderCartera,caso:renderCaso,semana:renderSemana,prospeccion:renderProspeccion,importar:renderImportar,manual:renderManual})[tab]()}
+let rq=0;function scheduleRender(){if(rq)return;rq=requestAnimationFrame(()=>{rq=0;const a=document.activeElement;if(a&&a.closest&&a.closest('#semana,#prospeccion')&&/INPUT|SELECT|TEXTAREA/.test(a.tagName))return;render()})}
 function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manual')manNuevas=new Set(noVistas().map(n=>n.id));tab=t;if(t!=='manual')pref('tab',t==='caso'?'cartera':t);document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.t===t)));document.querySelectorAll('section.scr').forEach(s=>s.hidden=s.id!==t);render();if(t==='manual')marcarVisto();else actualizarAviso();window.scrollTo(0,0)}
 
 
@@ -870,6 +1165,7 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manu
    Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
    (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
 const NOVEDADES=[
+ {id:'2026-10-28a',fecha:'2026-10-28',titulo:'Nueva pestaña: Prospección de servicios',texto:'Ahora puedes ver a los clientes que hicieron su servicio de mantenimiento y no han regresado (entre 12 y 24 meses) y a los que ya casi les toca. Cada uno muestra su historial de servicios, kilometraje, trabajos preventivos sugeridos y un mensaje de WhatsApp listo. El historial se carga desde la misma pestaña con el reporte de Cotizaciones.',sec:'m-pros'},
  {id:'2026-10-27a',fecha:'2026-10-27',titulo:'Cuánto se recuperó por cada orden',texto:'Ahora puedes ver el detalle de lo recuperado orden por orden: toca “Recuperado total” en Cartera, “ver detalle” en Semana (de la semana y del mes) o la casilla de Hoy. En Cartera hay un filtro “Con recuperado” (incluye las autorizaciones parciales) y una columna “Recuperado” junto a lo pendiente de cada caso.',sec:'m-cartera'},
  {id:'2026-10-26a',fecha:'2026-10-26',titulo:'Detalle de lo recuperado esta semana',texto:'En “Hoy”, toca la casilla “Recuperado esta semana” y verás solo los casos que se autorizaron, con los puntos aprobados y su monto.',sec:'m-hoy'},
  {id:'2026-10-13f',fecha:'2026-10-13',titulo:'Jefe de taller: corregir un caso cerrado como En taller o Perdido',texto:'Si un caso se cerró como En taller o Perdido pero el cliente sí autorizó, el jefe puede registrar la recuperación desde el caso para que cuente en lo recuperado y en el incentivo.',sec:'m-jefe'},
@@ -900,6 +1196,7 @@ const MAN=[
  {id:'m-cartera',r:0,t:'Cartera y Caso',h:`<ul><li><b>Cartera:</b> todos los casos, con lo <b>pendiente</b> y lo <b>recuperado</b> de cada uno. Filtra por estado o busca por OT, cliente o placa; el filtro <b>Con recuperado</b> muestra todos los casos con algo autorizado (también los parciales, que siguen abiertos). Toca la casilla <b>Recuperado total</b> para ver, orden por orden, cuánto se recuperó y con qué puntos. Toca una fila para abrir el caso.</li><li><b>Caso:</b> partidas pendientes, bitácora de contactos (quién, cuándo, qué pasó), el botón <b>Ver reporte con fotos y videos</b> y el enlace a Clear Mechanic.</li><li>Si un caso no tiene enlace de inspección, se avisa: falta cargar el reporte “Formas de Inspección”.</li></ul>`},
  {id:'m-semana',r:0,t:'Semana y respaldo',h:`<ul><li><b>Semana:</b> el reporte del sábado: casos asignados, contactos, autorizados, lo recuperado y el incentivo del mes. Se llena solo con lo que se registra en “Hoy”. Junto a lo recuperado se ve cuánto de eso es <b>mano de obra</b> (M.O.), también en el panel del incentivo. <b>ver detalle</b> (semana) y <b>Ver detalle por orden</b> (mes) listan cada orden con lo que se recuperó.</li><li><b>Cierre mensual:</b> abajo del incentivo se ve el historial de meses cerrados (meta, porcentajes, recuperado, incentivo). El jefe de taller guarda el cierre de cada mes al terminar (idealmente con la meta y los porcentajes ya definidos para ese mes).</li><li><b>Respaldo</b> (asesor y jefe): en Semana → Respaldo, “Descargar respaldo (Excel)”. Hazlo cada sábado y guárdalo solo en tu computadora; trae datos de clientes y no debe enviarse por WhatsApp ni subirse a internet.</li></ul>`},
  {id:'m-carga',r:1,t:'Cada lunes: carga de Clear Mechanic',h:`<p>La carga normalmente la hace el <b>jefe de taller</b>, pero el asesor también puede. Son <b>dos reportes</b> de Clear Mechanic, de los <b>últimos 30 días</b>:</p><ol><li>“Reporte de Actividad – <b>Cotizaciones</b>”</li><li>“Reporte de Actividad – <b>Formas de Inspección</b>” (trae el enlace de fotos y videos de cada orden)</li></ol><ul><li>En <b>Importar Clear Mechanic</b> arrastra los dos archivos juntos (o uno por uno, en cualquier orden): el sistema reconoce cuál es cuál.</li><li>Crea los casos nuevos, detecta a los clientes que ya aprobaron y asigna a cada caso su enlace. No duplica nada ni borra lo que ya se registró.</li><li>Si en “Hoy” aparece “Última carga de Clear Mechanic hace X días”, hay que cargar los reportes.</li><li><b>Lo registrado en la herramienta manda sobre el Excel:</b> si un caso está Recuperado, En taller, En negociación o Perdido, la carga no le cambia el estado ni lo recuperado aunque en Clear Mechanic siga como pendiente. Cuando se recupera un caso y Clear Mechanic abre una orden nueva, esa orden es otra OT y no se cuenta dos veces.</li></ul>`},
+ {id:'m-pros',r:0,t:'Prospección de servicios de mantenimiento',h:`<p>Esta pestaña arma, con el historial de servicios <b>aprobados</b> en Clear Mechanic (menor, intermedio, mayor, mayor completo y caja automática), la lista de clientes a quienes conviene contactar para su próximo mantenimiento.</p><ul><li><b>Vencidos:</b> su último servicio fue hace entre 12 y 24 meses. Los de más de 24 meses se dejan fuera porque probablemente ya no tienen el vehículo.</li><li><b>Próximos a servicio:</b> ya pasó el 85% del tiempo que normalmente tardan entre un servicio y el siguiente.</li><li><b>Ya en contacto:</b> alguien los contactó hace poco o quedó una cita; no se vuelven a llamar todavía.</li><li>Toca un cliente: verás cada servicio con su fecha, kilometraje y monto, los trabajos preventivos sugeridos y el mensaje de WhatsApp listo. Registra el resultado: <b>Mensaje enviado, Sin respuesta, Agendó cita, Más adelante, Ya vino</b> (servicio que no quedó cotizado en Clear Mechanic) o <b>No tiene el vehículo</b>.</li><li>Si el cliente ya tiene un caso abierto de cotización, aparece marcado para no llamarlo dos veces por temas distintos.</li><li><b>Cargar historial:</b> sube el reporte de Cotizaciones con el rango largo (desde el 1 de enero de 2025). No crea casos ni toca la cartera. La carga semanal de Importar también lo va actualizando.</li><li>El jefe de taller edita aquí qué cuenta como servicio, los trabajos sugeridos por kilometraje y los modelos diésel.</li></ul>`},
  {id:'m-jefe',r:2,t:'Solo jefe de taller: ajustes y usuarios',h:`<ul><li><b>Semana → Ajustes:</b> casos por día, meta mensual y porcentajes del incentivo. Después de cambiar los casos por día usa “Rehacer agenda” en Hoy para aplicarlo.</li><li><b>Caso cerrado como En taller o Perdido que en realidad fue recuperado:</b> si el caso <b>ya tiene monto autorizado registrado</b>, ábrelo y toca <b>Marcar como Recuperado</b> (solo cambia el estado). Si <b>no</b> tiene monto, toca <b>Registrar recuperación</b>. Ahí escribes lo que el cliente autorizó (total o parcial) y una nota; queda como recuperado (semana, mes e incentivo) y la bitácora anota que fue corrección del jefe.</li><li><b>Caso que ya estaba autorizado antes:</b> si la carga de Clear Mechanic contó como “recuperado” un caso que el cliente ya había autorizado antes (Clear Mechanic no lo tenía marcado), abre el caso y toca <b>Quitar de lo recuperado (ya estaba autorizado)</b>. Se retiran esos montos de lo recuperado, del incentivo y de la semana, y la bitácora conserva el historial con tu nota. Si ya habías guardado el cierre de ese mes, vuelve a guardarlo para que se actualice.</li><li><b>Recuperación con descuento:</b> si el cliente autorizó todo pero se facturó con descuento y el caso sigue mostrando una diferencia pendiente, abre el caso y toca <b>Ajustar a recuperación total (descuento)</b>. El monto recuperado no cambia; la diferencia queda registrada como descuento (con tu nota en la bitácora) y el caso pasa a 100% recuperado. La ventana sugiere la diferencia exacta, con centavos. Si el caso ya tiene descuento, el botón pasa a <b>Editar descuento</b> para corregir el monto total. Para evitarlo en adelante, el asesor debe registrar en “Autorizó” el monto cotizado y dejar el descuento para el jefe.</li><li><b>Cierre mensual:</b> en Semana → Cierre mensual elige el mes y toca “Guardar cierre”. Se guardan la meta y los porcentajes <b>actuales</b>, lo recuperado, las autorizaciones y el incentivo que salió, para que no se pierdan si después cambias los ajustes. Si vuelves a cerrar el mismo mes, se reemplaza (pide confirmación). Primero ajusta la meta y los % del mes, luego cierra.</li><li><b>Usuarios y accesos</b> (Semana → Ajustes): agregar usuarios con su rol (consulta, asesor o jefe), restablecer el PIN de alguien y desactivar un acceso. Los usuarios no se borran, solo se desactivan.</li><li>Si pasan más de 7 días sin respaldo, en “Hoy” te sale un aviso.</li></ul>`},
  {id:'m-reglas',r:0,t:'Reglas de oro',h:`<ul><li>Registra <b>cada</b> contacto el mismo día: la bitácora es la prueba del trabajo.</li><li>Nada se cierra sin motivo: “Perdido” siempre lleva razón.</li><li>No compartas tu PIN y toca <b>Salir</b> al terminar.</li><li>Si algo se ve raro o no carga: recarga la página (Ctrl + F5 en computadora). Si sigue igual, avisa al jefe de taller con una captura.</li></ul>`}
 ];
@@ -924,9 +1221,19 @@ function renderManual(){
 /* ================= EVENTOS ================= */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec],#cierreGo,[data-addhoy],[data-rec]');if(!t)return;
+  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec],#cierreGo,[data-addhoy],[data-rec],[data-ptab],[data-vh],[data-pres],[data-pcopy],#pSave,#pDef');if(!t)return;
   if(t.id==='salir'){sess('user',null);location.reload();return}
   if(t.dataset.rec){e.preventDefault();return dlgRec(t.dataset.rec)}
+  if(t.dataset.ptab){prosTab=t.dataset.ptab;return renderProspeccion()}
+  if(t.dataset.vh)return dlgVeh(t.dataset.vh);
+  if(t.dataset.pres)return accionVeh(t.dataset.pk,t.dataset.pres);
+  if(t.dataset.pcopy){const m=$('#pMsg');try{await navigator.clipboard.writeText(m.textContent);toast('Mensaje copiado')}catch(_){toast('No se pudo copiar: selecciona el texto')}return}
+  if(t.id==='pDef'){if(!isJefe())return;$('#p_serv').value=PROS_DEF.servicios;$('#p_excl').value=PROS_DEF.excluir;$('#p_reg').value=PROS_DEF.reglas;$('#p_die').value=PROS_DEF.diesel;$('#p_pct').value=PROS_DEF.pct;$('#p_desde').value=PROS_DEF.desde;$('#p_hasta').value=PROS_DEF.hasta;toast('Propuesta inicial cargada: toca Guardar para aplicarla');return}
+  if(t.id==='pSave'){if(!isJefe())return;const v=id=>$('#'+id).value;
+    const pros={servicios:v('p_serv'),excluir:v('p_excl'),reglas:v('p_reg'),diesel:v('p_die'),pct:Math.min(100,Math.max(50,+v('p_pct')||85)),desde:Math.max(3,+v('p_desde')||12),hasta:Math.max(6,+v('p_hasta')||24)};
+    if(pros.hasta<=pros.desde)pros.hasta=pros.desde+12;
+    if(!parseServ(pros.servicios).length){toast('Escribe al menos un tipo de servicio (Nombre: palabra|palabra)');return}
+    try{await setDoc(doc(db,'crm_config','zona10'),{pros},{merge:true});toast('Ajustes de prospección guardados')}catch(err){toast('No se pudo guardar: '+(err.code||err.message))}return}
   if(t.dataset.go)return go(t.dataset.go);
   if(t.dataset.ver){e.preventDefault();closeDlg();casoSel=t.dataset.ver;return go('caso')}
   if(t.dataset.a){if(t.tagName!=='A')e.preventDefault();return accion(t.dataset.ot,t.dataset.a)}
@@ -947,13 +1254,15 @@ document.addEventListener('click',async e=>{
     const cfg={asesor:v('c_asesor')||'Ricardo',min:Math.max(1,+v('c_min')||2),max:Math.max(1,+v('c_max')||5),meta:+v('c_meta')||0,pct1:+v('c_pct1')||0,pct2:+v('c_pct2')||0,base:v('c_base')};if(cfg.min>cfg.max)cfg.min=cfg.max;
     try{await setDoc(doc(db,'crm_config','zona10'),cfg,{merge:true});toast('Ajustes guardados · usa “Rehacer agenda” para aplicarlos hoy')}catch(err){toast('No se pudo guardar: '+(err.code||err.message))}return}
 });
-document.addEventListener('change',e=>{if(e.target.id==='fEst'){fEst=e.target.value;renderCartera()}if(e.target.id==='cierreMes'){cierreSel=e.target.value;renderSemana()}});
-document.addEventListener('input',e=>{if(e.target.id==='fBus'){fBus=e.target.value;const p=e.target.selectionStart;renderCartera();const i=$('#fBus');i.focus();i.setSelectionRange(p,p)}});
+document.addEventListener('change',e=>{if(e.target.id==='fileP'){procesarHistorial([...e.target.files]);e.target.value='';return}if(e.target.id==='pMarca'){prosMarca=e.target.value;$('#pLista').innerHTML=pLista();return}if(e.target.id==='pDie'){prosDie=e.target.value;$('#pLista').innerHTML=pLista();return}if(e.target.id==='fEst'){fEst=e.target.value;renderCartera()}if(e.target.id==='cierreMes'){cierreSel=e.target.value;renderSemana()}});
+document.addEventListener('input',e=>{if(e.target.id==='pBus'){prosBus=e.target.value;$('#pLista').innerHTML=pLista();return}if(e.target.id==='fBus'){fBus=e.target.value;const p=e.target.selectionStart;renderCartera();const i=$('#fBus');i.focus();i.setSelectionRange(p,p)}});
 $('#ov').addEventListener('click',e=>{if(e.target.id==='ov')closeDlg()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDlg()});
 $('#file').addEventListener('change',e=>{procesarArchivos([...e.target.files]);e.target.value=''});
 const dr=$('#drop');['dragenter','dragover'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.add('over')}));['dragleave','drop'].forEach(ev=>dr.addEventListener(ev,e=>{e.preventDefault();dr.classList.remove('over')}));
 dr.addEventListener('drop',e=>{if(canAct())procesarArchivos([...e.dataTransfer.files])});
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{if(e.target.closest&&e.target.closest('#dropP')){e.preventDefault();$('#dropP').classList.add('over')}}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{if(e.target.closest&&e.target.closest('#dropP')){e.preventDefault();$('#dropP').classList.remove('over');if(ev==='drop'&&canAct())procesarHistorial([...e.dataTransfer.files])}}));
 window.addEventListener('online',()=>{const b=$('#ban');b.className='ban';b.textContent=BAN_OK});
 window.addEventListener('offline',()=>{const b=$('#ban');b.className='ban err';b.textContent='Sin conexión: los cambios no se guardan hasta que vuelva el internet. No cierres esta pestaña.'});
 setInterval(()=>{const h=gtToday();if(h!==TODAY){TODAY=h;ensureAgenda();scheduleRender()}},60000);
@@ -969,7 +1278,7 @@ function entrar(u){
   document.querySelector('nav button[data-t="importar"]').hidden=!canAct();
   const b=$('#ban');b.className='ban';b.textContent=BAN_OK;
   startSync();
-  const t=pref('tab');go(['hoy','cartera','semana','importar'].includes(t)?t:'hoy');
+  const t=pref('tab');go(['hoy','cartera','semana','prospeccion','importar'].includes(t)?t:'hoy');
 }
 async function loginUI(){
   const body=$('#loginBody');
