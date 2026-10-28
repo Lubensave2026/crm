@@ -50,6 +50,9 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await page.waitForTimeout(600);
   if(tag==='desktop'){
     ok('importación: cartera Q1,068,512',await sinEsp(page,'#kCart')==='Q1,068,512');
+    await page.click('nav button[data-t="prospeccion"]');await page.waitForSelector('#pLista',{timeout:10000});
+    ok('Prospección (asesor): aviso de historial corto, sin ajustes de jefe y con carga de historial',/todavía no cubre/.test(await page.textContent('#prospeccion'))&&!(await page.$('#pSave'))&&!!(await page.$('#fileP')));
+    await page.click('nav button[data-t="importar"]');
     ok('importación: 102 casos nuevos',/102/.test(await page.textContent('#impRes')));
     ok('importación: 54 avisos',/>54</.test(await page.innerHTML('#impRes')));
     ok('agenda de hoy creada (2 a 5 casos)',await page.evaluate(()=>{const a=Object.values(__DB.crm_agenda||{})[0];return !!a&&a.ots.length>=2&&a.ots.length<=5}));
@@ -184,6 +187,56 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await b.page.click('nav button[data-t="manual"]');await b.page.waitForTimeout(200);ok('manual: jefe ve la sección de jefe',/Solo jefe de taller/.test(await b.page.textContent('#manual')));await b.page.click('nav button[data-t="semana"]');
   await b.page.click('nav button[data-t="importar"]');await b.page.setInputFiles('#file',xlsx);await b.page.waitForSelector('#kCart',{timeout:60000});await b.page.waitForTimeout(600);
   await b.page.click('nav button[data-t="hoy"]');await b.page.waitForTimeout(300);ok('jefe: aviso de respaldo en Hoy cuando no hay',/respaldo/i.test(await b.page.textContent('#hoy')));
+  // ---- Prospección de servicios de mantenimiento ----
+  ok('importación semanal alimenta el historial de servicios',await b.page.evaluate(()=>Object.keys(__DB.crm_vehiculos||{}).length>50));
+  const casosAntes=await b.page.evaluate(()=>Object.keys(__DB.crm_casos).length);
+  await b.page.evaluate(()=>{
+    const d=n=>new Date(Date.now()-n*864e5).toISOString().slice(0,10);
+    const sv=(a,ot,t,km,x)=>({f:d(a),ot,t,km,m:500,...(x?{x:1}:{})});
+    const cas=Object.values(__DB.crm_casos).find(c=>c.placa&&!['Recuperado','En taller','Perdido'].includes(c.estado));
+    __DB.crm_vehiculos=__DB.crm_vehiculos||{};
+    __DB.crm_vehiculos.pTEST111={key:'pTEST111',placa:'TEST111',nombre:'Carlos Mendez',movil:'55550001',marca:'Toyota',modelo:'Hilux',anio:'2018',serv:{a:sv(600,'t1','Servicio menor',60000),b:sv(420,'t2','Servicio mayor',76000)},ult:d(420)};
+    __DB.crm_vehiculos.pTEST222={key:'pTEST222',placa:'TEST222',nombre:'Ana Lopez',movil:'55550002',marca:'Honda',modelo:'CR-V',anio:'2016',serv:{a:sv(330,'t3','Servicio menor',40000),b:sv(160,'t4','Servicio intermedio',46000)},ult:d(160)};
+    __DB.crm_vehiculos.pTEST333={key:'pTEST333',placa:'TEST333',nombre:'Luis Perez',movil:'55550003',marca:'Kia',modelo:'Rio',anio:'2020',serv:{a:sv(500,'t5','Servicio menor',30000)},ult:d(500)};
+    __DB.crm_vehiculos.pTEST444={key:'pTEST444',placa:cas?cas.placa:'TEST444',nombre:'Mia Soto',movil:'55550004',marca:'Mazda',modelo:'3',anio:'2019',serv:{a:sv(450,'t6','Servicio menor',35000)},ult:d(450)};
+    __notify();
+  });
+  await b.page.click('nav button[data-t="prospeccion"]');await b.page.waitForSelector('#pLista',{timeout:10000});await b.page.waitForTimeout(300);
+  ok('Prospección: pestaña visible y con lista de vencidos',/Vencidos 12 a 24 meses/.test(await b.page.textContent('#prospeccion'))&&!!(await b.page.$('tr[data-vh="pTEST111"]')));
+  ok('Prospección: vencido de 14 meses aparece, el de 5 meses (próximo) no está en vencidos',!!(await b.page.$('tr[data-vh="pTEST333"]'))&&!(await b.page.$('tr[data-vh="pTEST222"]')));
+  ok('Prospección: marca el caso de cotización abierto de la misma placa',/Ya tiene caso de cotización/.test(await b.page.textContent('#pLista'))||!(await b.page.evaluate(()=>Object.values(__DB.crm_casos).some(c=>c.placa&&!['Recuperado','En taller','Perdido'].includes(c.estado)))));
+  await b.page.fill('#pBus','test111');await b.page.waitForTimeout(150);
+  ok('Prospección: la búsqueda por placa filtra',(await b.page.$$('#pLista tr[data-vh]')).length===1);
+  await b.page.fill('#pBus','');await b.page.selectOption('#pDie','si');await b.page.waitForTimeout(150);
+  ok('Prospección: filtro diésel deja solo la Hilux',await b.page.evaluate(()=>[...document.querySelectorAll('#pLista tr[data-vh]')].every(r=>r.dataset.vh==='pTEST111')&&!!document.querySelector('#pLista tr[data-vh="pTEST111"]')));
+  await b.page.selectOption('#pDie','');await b.page.waitForTimeout(100);
+  await b.page.click('tr[data-vh="pTEST111"]');await b.page.waitForTimeout(200);
+  const dl=await b.page.textContent('#dlg');
+  ok('Prospección: detalle muestra historial, sugerencias y mensaje',/Servicio mayor/.test(dl)&&/Faja de tiempo/.test(dl)&&/Limpieza de EGR/.test(dl)&&/Carlos/.test(dl)&&/Hace 1\d meses/.test(dl));
+  ok('Prospección: detalle tiene botón de WhatsApp',!!(await b.page.$('#dlg a[href^="https://wa.me/50255550001"]')));
+  await b.page.screenshot({path:path.join(out,'8-prospeccion-detalle.png'),fullPage:true});
+  await b.page.click('#dlg [data-pres="enviado"]');await b.page.waitForTimeout(400);
+  ok('Prospección: mensaje enviado queda guardado con el usuario',await b.page.evaluate(()=>{const c=__DB.crm_vehiculos.pTEST111.contactos||[];return c.length===1&&c[0].res==='enviado'&&c[0].u==='Byron'}));
+  ok('Prospección: pasa a “Ya en contacto” y sale de vencidos',!(await b.page.$('tr[data-vh="pTEST111"]'))&&/Ya en contacto · 1/.test(await b.page.textContent('.ptabs')));
+  await b.page.click('[data-ptab="contacto"]');await b.page.waitForTimeout(150);
+  ok('Prospección: aparece en la pestaña Ya en contacto',!!(await b.page.$('tr[data-vh="pTEST111"]')));
+  await b.page.click('[data-ptab="vencido"]');await b.page.waitForTimeout(150);
+  await b.page.click('tr[data-vh="pTEST333"]');await b.page.click('#dlg [data-pres="ya-vino"]');await b.page.waitForTimeout(150);await b.page.click('#dOk');await b.page.waitForTimeout(400);
+  ok('Prospección: “Ya vino” guarda la fecha y saca al cliente de la lista',await b.page.evaluate(()=>{const v=__DB.crm_vehiculos.pTEST333;return !!v.ya&&v.ya.u==='Byron'&&v.contactos.some(c=>c.res==='ya-vino')})&&!(await b.page.$('tr[data-vh="pTEST333"]')));
+  await b.page.click('tr[data-vh="pTEST444"]');await b.page.click('#dlg [data-pres="sin-vehiculo"]');await b.page.waitForTimeout(150);await b.page.click('#dOk');await b.page.waitForTimeout(400);
+  ok('Prospección: “No tiene el vehículo” lo descarta',await b.page.evaluate(()=>__DB.crm_vehiculos.pTEST444.contactos.some(c=>c.res==='sin-vehiculo'))&&!(await b.page.$('tr[data-vh="pTEST444"]')));
+  await b.page.click('[data-ptab="proximo"]');await b.page.waitForTimeout(150);
+  ok('Prospección: próximo a servicio (último hace 160 días, cada ~170)',!!(await b.page.$('tr[data-vh="pTEST222"]')));
+  await b.page.click('[data-ptab="vencido"]');
+  await b.page.setInputFiles('#fileP',xlsx);await b.page.waitForSelector('#pRes .steps',{timeout:60000});
+  ok('Prospección: cargar historial no crea casos nuevos ni toca la cartera',(await b.page.evaluate(()=>Object.keys(__DB.crm_casos).length))===casosAntes);
+  ok('Prospección: cargar historial guarda la última carga',await b.page.evaluate(()=>Object.values(__DB.crm_config).some(x=>x.prosUlt&&x.prosUlt.usuario==='Byron')));
+  await b.page.fill('#p_pct','90');await b.page.click('#pSave');await b.page.waitForTimeout(400);
+  ok('Prospección: el jefe guarda sus ajustes',await b.page.evaluate(()=>Object.values(__DB.crm_config).some(x=>x.pros&&x.pros.pct===90&&/Servicio menor/.test(x.pros.servicios))));
+  ok('Prospección: sin aviso de historial corto cuando ya cubre 12 meses',!/todavía no cubre/.test(await b.page.textContent('#prospeccion')));
+  await b.page.screenshot({path:path.join(out,'8-prospeccion-jefe.png'),fullPage:true});
+  await b.page.click('nav button[data-t="manual"]');await b.page.waitForTimeout(200);
+  ok('manual: sección de Prospección',/Prospección de servicios de mantenimiento/.test(await b.page.textContent('#manual')));
   await b.page.click('nav button[data-t="semana"]');
   await b.page.screenshot({path:path.join(out,'6-semana-jefe.png'),fullPage:true});
   // Jefe: ajustar un caso con descuento (recuperó parcial, el cliente autorizó todo con descuento)
