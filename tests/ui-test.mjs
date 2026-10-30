@@ -236,6 +236,24 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   ok('Prospección: sin aviso de historial corto cuando ya cubre 12 meses',!/todavía no cubre/.test(await b.page.textContent('#prospeccion')));
   await b.page.screenshot({path:path.join(out,'8-prospeccion-jefe.png'),fullPage:true});
   await b.page.click('nav button[data-t="manual"]');await b.page.waitForTimeout(200);
+  // ---- Historial de vehículos ----
+  const ejem=await b.page.evaluate(()=>{const v=Object.values(__DB.crm_vehiculos).find(x=>x.ord&&Object.keys(x.ord).length&&x.placa&&x.nombre);return {placa:v.placa,nombre:v.nombre.split(' ')[0],n:Object.keys(v.ord).length}});
+  await b.page.click('nav button[data-t="historial"]');await b.page.waitForSelector('#hBus',{timeout:10000});
+  ok('Historial: pestaña con buscador y sin resultados al inicio',/al menos 2 letras/.test(await b.page.textContent('#hRes')));
+  await b.page.fill('#hBus',ejem.placa);await b.page.waitForTimeout(200);
+  ok('Historial: busca por placa y muestra las órdenes con puntos, estado y monto',await b.page.evaluate(n=>{const t=document.querySelector('#hRes').textContent;return document.querySelectorAll('#hRes details').length>=1&&document.querySelectorAll('#hRes table').length>=n&&/Aprobado|Rechazado/.test(t)&&/Q\d/.test(t)},ejem.n));
+  await b.page.fill('#hBus',ejem.nombre);await b.page.waitForTimeout(200);
+  ok('Historial: busca por nombre',(await b.page.$$('#hRes details')).length>=1);
+  await b.page.fill('#hBus','zzzzqq');await b.page.waitForTimeout(150);
+  ok('Historial: sin coincidencias avisa',/No se encontró/.test(await b.page.textContent('#hRes')));
+  await b.page.fill('#hBus','test111');await b.page.waitForTimeout(150);
+  ok('Historial: vehículo con solo servicios pide volver a cargar',/Vuelve a cargar el historial/.test(await b.page.textContent('#hRes')));
+  await b.page.screenshot({path:path.join(out,'9-historial.png'),fullPage:true});
+  await b.page.click('nav button[data-t="prospeccion"]');await b.page.waitForTimeout(200);
+  await b.page.click('[data-ptab="proximo"]');await b.page.click('tr[data-vh="pTEST222"]');await b.page.click('#dlg [data-hist]');await b.page.waitForSelector('#hBus');
+  ok('Prospección: “Ver historial completo” abre el Historial buscando esa placa',(await b.page.inputValue('#hBus'))==='TEST222'&&(await b.page.$$('#hRes details')).length===1);
+  await b.page.click('nav button[data-t="manual"]');await b.page.waitForTimeout(200);
+  ok('manual: sección de Historial de vehículos',/Historial de vehículos/.test(await b.page.textContent('#manual')));
   ok('manual: sección de Prospección',/Prospección de servicios de mantenimiento/.test(await b.page.textContent('#manual')));
   await b.page.click('nav button[data-t="semana"]');
   await b.page.screenshot({path:path.join(out,'6-semana-jefe.png'),fullPage:true});
