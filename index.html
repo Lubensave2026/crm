@@ -119,6 +119,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
     <button role="tab" aria-selected="false" data-t="importar">Importar Clear Mechanic</button>
     <button role="tab" aria-selected="false" data-t="semana">Semana</button>
     <button role="tab" aria-selected="false" data-t="prospeccion">Prospección</button>
+    <button role="tab" aria-selected="false" data-t="historial">Historial de vehículos</button>
     <button role="tab" aria-selected="false" data-t="manual">Manual de usuario<i class="dot" id="manDot" hidden></i></button>
   </nav>
 </div></div>
@@ -146,6 +147,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
 </section>
 <section class="scr" id="semana" hidden></section>
 <section class="scr" id="prospeccion" hidden></section>
+<section class="scr" id="historial" hidden></section>
 <section class="scr" id="manual" hidden></section>
 </main>
 
@@ -410,6 +412,7 @@ function parseServ(t){return String(t||'').split('\n').map(l=>{const i=l.indexOf
 const parseExcl=t=>String(t||'').split(/[|\n,]/).map(nt).filter(Boolean);
 function parseReglas(t){return String(t||'').split('\n').map(l=>{const p=l.split('|').map(x=>x.trim());if(p.length<2||!p[0]||!(+p[1]>0))return null;const d=p[3]||'*';return {nombre:p[0],km:+p[1],marca:p[2]||'*',diesel:/^s/i.test(d)?'si':/^n/i.test(d)?'no':'*',pal:p.slice(4).map(nt).filter(Boolean)}}).filter(Boolean)}
 function tipoServ(punto,reglas,excl){const t=nt(punto);if(!t||excl.some(x=>hasFrag(t,x)))return null;for(const r of reglas)if(r.f.some(x=>hasFrag(t,x)))return r.tipo;return null}
+const canon=o=>JSON.stringify(o===undefined?null:o,(k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a<b?-1:a>b?1:0)):v);
 function fechaISO(f){return f instanceof Date?ymd(f):(typeof f==='number'&&f>20000)?new Date(Math.round((f-25569)*864e5)).toISOString().slice(0,10):String(f||'').slice(0,10)}
 
 /* Del reporte de Cotizaciones saca los servicios aprobados por vehículo. Devuelve {error} o {stats, escribir:[{key,data}]} (data se guarda con merge). */
@@ -450,20 +453,19 @@ function planServicios(rows,vehs,o){
       const tp=nt(punto);
       for(const r of reglas)if(r.pal.some(x=>hasFrag(tp,x))){const id=ot+'_x_'+norm(r.nombre);const e=ents[id]=ents[id]||{f:w.f,ot,t:r.nombre,km:w.km,m:0,x:1};e.m+=p.total}
     }
-    if(!Object.keys(ents).length)continue;
     const vin=VIN_OK(w.vin)?w.vin:'',pl=normPlaca(w.placa),plOk=pl.length>=5&&!PLACA_NO.test(pl)?pl:'';
     let key=(vin&&ix.vin[vin])||(plOk&&ix.placa[plOk])||null;
     if(!key){if(vin)key='v'+vin;else if(plOk)key='p'+plOk;else{sinId++;continue}}
     if(vin)ix.vin[vin]=key;if(plOk)ix.placa[plOk]=key;
-    const n=N[key]=N[key]||{ents:{},idf:'',ident:null,vin:'',placa:''};
+    const n=N[key]=N[key]||{ents:{},ord:{},idf:'',ident:null,vin:'',placa:''};
+    n.ord[ot]={f:w.f,km:w.km,p:Object.entries(w.pts).filter(([,p])=>p.total>0||p.ec!=='P').map(([nom,p])=>({n:nom,t:p.total,e:p.ec}))};
     Object.assign(n.ents,ents);
     if(vin)n.vin=vin;if(plOk)n.placa=plOk;
-    if(Object.values(ents).some(e=>!e.x)&&w.f>=n.idf){n.idf=w.f;n.ident={nombre:w.nombre,movil:w.movil,marca:w.marca,modelo:w.modelo,anio:w.anio}}
+    if(w.f>=n.idf){n.idf=w.f;n.ident={nombre:w.nombre,movil:w.movil,marca:w.marca,modelo:w.modelo,anio:w.anio}}
   }
   const escribir=[];let nuevos=0,actualizados=0,servicios=0,vehiculos=0;
   for(const key in N){
     const n=N[key],ex=(vehs||{})[key];
-    if(!Object.values(n.ents).some(e=>!e.x)&&!(ex&&Object.values(ex.serv||{}).some(e=>!e.x)))continue;
     vehiculos++;
     const cambios={};
     for(const id in n.ents){const e=n.ents[id],a=ex&&ex.serv&&ex.serv[id];
@@ -472,7 +474,11 @@ function planServicios(rows,vehs,o){
     if(cambio)data.serv=cambios;
     const ult=Object.values({...(ex&&ex.serv||{}),...n.ents}).filter(e=>!e.x).reduce((a,e)=>e.f>a?e.f:a,'');
     if(ult&&ult!==(ex&&ex.ult)){data.ult=ult;cambio=true}
-    if(n.ident&&(!ex||n.idf>=(ex.ult||''))){
+    const uo=Object.values(n.ord).reduce((a,o)=>o.f>a?o.f:a,'');
+    if(uo&&uo>((ex&&ex.uo)||'')){data.uo=uo;cambio=true}
+    const oc={};for(const o in n.ord)if(canon(ex&&ex.ord&&ex.ord[o])!==canon(n.ord[o]))oc[o]=n.ord[o];
+    if(Object.keys(oc).length){data.ord=oc;cambio=true}
+    if(n.ident&&(!ex||n.idf>=(ex.uo||''))){
       for(const k in n.ident)if(n.ident[k]&&n.ident[k]!==(ex&&ex[k])){data[k]=n.ident[k];cambio=true}}
     if(n.vin&&n.vin!==(ex&&ex.vin)){data.vin=n.vin;cambio=true}
     if(n.placa&&n.placa!==(ex&&ex.placa)){data.placa=n.placa;cambio=true}
@@ -536,6 +542,17 @@ function prospectos(vehs,casos,P,hoy){
   return Object.entries(vehs||{}).map(([k,v])=>analisisVeh({...v,key:k},hoy,P)).filter(a=>a&&a.estado&&a.cont!=='descartado')
     .map(a=>({...a,caso:ab[normPlaca(a.v.placa)]||null}))
     .sort((a,b)=>a.estado===b.estado?(a.estado==='vencido'?a.dd-b.dd:b.dd-a.dd):a.estado==='vencido'?-1:1);
+}
+/* Historial de vehículos: busca por nombre, placa, vehículo, VIN, teléfono u OT. Todas las palabras deben aparecer. */
+function buscarHistorial(vehs,q){
+  const t=nt(q).split(' ').filter(Boolean),pl=normPlaca(q),dig=String(q||'').replace(/\D/g,'');
+  if(!t.length)return [];
+  return Object.entries(vehs||{}).filter(([k,v])=>{
+    const h=nt([v.nombre,v.placa,v.marca,v.modelo,v.anio,v.vin,v.movil].join(' '));
+    if(t.every(x=>h.includes(x)))return true;
+    if(pl.length>=4&&normPlaca(v.placa).includes(pl))return true;
+    return dig.length>=3&&Object.keys(v.ord||{}).some(o=>o===dig||(dig.length>=4&&o.includes(dig)));
+  }).map(([k,v])=>({...v,key:k})).sort((a,b)=>(b.uo||b.ult||'').localeCompare(a.uo||a.ult||''));
 }
 function mensajePros(a,asesor,sede,sug){
   const n=(a.v.nombre||'').split(' ')[0]||'[Nombre]',veh=[a.v.marca,a.v.modelo,a.v.anio].filter(Boolean).join(' ')||'vehículo',tr=sug.slice(0,2).map(s=>s.nombre.toLowerCase());
@@ -1103,8 +1120,39 @@ function dlgVeh(key){
    <div class="msg" id="pMsg">${esc(msg)}</div>
    ${cs.length?`<p class="sm"><b>Contactos:</b> ${cs.slice(0,4).map(c=>fmtDA(c.f)+' · '+esc(RES[c.res]||c.res)+(c.u?' · '+esc(c.u):'')+(c.nota?' · '+esc(c.nota):'')).join('<br>')}</p>`:''}
    ${ped?`<div class="acts">${link?`<a class="btn k1" href="${esc(link)}" target="_blank" rel="noopener">Abrir WhatsApp</a>`:''}<button class="btn" data-pcopy="1">Copiar mensaje</button><button class="btn" data-pres="enviado" data-pk="${esc(key)}">Mensaje enviado</button><button class="btn" data-pres="sin-respuesta" data-pk="${esc(key)}">Sin respuesta</button><button class="btn" data-pres="agendo" data-pk="${esc(key)}">Agendó cita</button><button class="btn" data-pres="mas-adelante" data-pk="${esc(key)}">Más adelante</button><button class="btn" data-pres="ya-vino" data-pk="${esc(key)}">Ya vino</button><button class="btn" data-pres="sin-vehiculo" data-pk="${esc(key)}">No tiene el vehículo</button></div>`:'<p class="sm">Tu usuario es de consulta: puedes ver la información, pero no registrar contactos.</p>'}
-   <div class="acts" style="justify-content:flex-end"><button class="btn" id="dCancel">Cerrar</button></div>`;
+   <div class="acts" style="justify-content:flex-end"><button class="btn" data-hist="${esc(key)}">Ver historial completo</button><button class="btn" id="dCancel">Cerrar</button></div>`;
   $('#ov').hidden=false;$('#dCancel').onclick=closeDlg;
+}
+/* ================= HISTORIAL DE VEHÍCULOS ================= */
+let hisBus='';
+const EST_ORD={A:'Aprobado',R:'Rechazado',P:'Pendiente'};
+function hResultados(){
+  const q=hisBus.trim();
+  if(nt(q).length<2&&String(q).replace(/\D/g,'').length<3)return '<p class="sm">Escribe al menos 2 letras o 3 números para buscar.</p>';
+  const l=buscarHistorial(S.veh,q);
+  if(!l.length)return vacio('No se encontró ningún vehículo','Prueba con otra parte del nombre, la placa, el modelo o el número de OT. Solo está lo que viene en los reportes de Cotizaciones cargados.');
+  const sh=l.slice(0,25);
+  return sh.map(v=>{
+    const ords=Object.entries(v.ord||{}).sort((a,b)=>b[1].f.localeCompare(a[1].f)||String(b[0]).localeCompare(String(a[0]),'es',{numeric:true}));
+    const sv=Object.values(v.serv||{}).filter(e=>!e.x).sort((a,b)=>b.f.localeCompare(a.f));
+    const abre=l.length<=3;
+    return `<details class="panel" ${abre?'open':''}><summary><span class="nm">${esc(v.nombre||'Sin nombre')}</span> · ${esc(v.placa||'sin placa')} · ${esc(nomVeh(v))} · <b>${ords.length?pl(ords.length,'orden','órdenes'):pl(sv.length,'servicio','servicios')}</b>${v.movil?' · '+esc(v.movil):''}</summary>
+     ${v.vin?`<p class="sm">VIN ${esc(v.vin)}</p>`:''}
+     ${ords.length?ords.map(([ot,o])=>{const a=o.p.filter(p=>p.e==='A').reduce((x,p)=>x+p.t,0),r=o.p.filter(p=>p.e!=='A').reduce((x,p)=>x+p.t,0);
+       return `<div class="tw" style="margin-top:8px"><table><thead><tr><th colspan="3">${fmtDA(o.f)} · OT ${esc(ot)}${o.km?' · '+o.km.toLocaleString('es-GT')+' km':''}${S.casos[ot]?` · <a href="#" data-ver="${esc(ot)}">Ver caso</a>`:''}</th><th style="text-align:right">Aprobado ${Q(a)}${r?' · No aprobado '+Q(r):''}</th></tr></thead><tbody>
+       ${o.p.length?o.p.map(p=>`<tr><td colspan="2">${esc(p.n)}</td><td><span class="pill ${p.e==='A'?'Recuperado':''}">${EST_ORD[p.e]||p.e}</span></td><td class="n">${p.t?Q(p.t):'—'}</td></tr>`).join(''):'<tr><td colspan="4" class="sm">Sin puntos con precio en esta orden.</td></tr>'}</tbody></table></div>`}).join(''):
+       `<p class="msg">Este vehículo solo tiene guardados sus servicios. Vuelve a cargar el historial en Prospección para ver todas sus órdenes.</p><div class="tw"><table><thead><tr><th>Fecha</th><th>Servicio</th><th>Km</th></tr></thead><tbody>${sv.map(e=>`<tr><td>${fmtDA(e.f)}</td><td>${esc(e.t)} <span class="sm">OT ${esc(e.ot)}</span></td><td>${e.km?e.km.toLocaleString('es-GT'):'—'}</td></tr>`).join('')}</tbody></table></div>`}
+    </details>`}).join('')+(l.length>sh.length?`<p class="sm">Mostrando 25 de ${l.length} vehículos. Agrega más datos a la búsqueda para acotar.</p>`:'');
+}
+function renderHistorial(){
+  const el=$('#historial');
+  if(!ready.veh){ensureVeh();el.innerHTML='<div><h1>Historial de vehículos</h1><p class="lead">Cargando el historial…</p></div>';return}
+  const todos=Object.values(S.veh),conOrd=todos.filter(v=>v.ord&&Object.keys(v.ord).length).length;
+  el.innerHTML=`<div><h1>Historial de vehículos</h1><p class="lead">Busca por nombre, placa, vehículo, VIN, teléfono o número de OT y ve todas las órdenes de ese vehículo con sus puntos, estados y montos, sin entrar a Clear Mechanic. Es lo que viene en los reportes de Cotizaciones que se han cargado.</p></div>
+   ${todos.length&&!conOrd?'<div class="msg">Todavía no hay órdenes completas guardadas. Sube de nuevo el reporte de Cotizaciones en <b>Prospección → Cargar historial</b> para activar esta búsqueda.</div>':''}
+   <label class="sm">Buscar<input id="hBus" placeholder="Ej.: P123ABC, Hilux, Carlos Mendez o 5381" value="${esc(hisBus)}" style="width:100%;font:16px var(--body);padding:10px;border:1px solid var(--line);background:var(--bg)"></label>
+   <div id="hRes">${hResultados()}</div>
+   <p class="sm">Vehículos en el historial: <b>${todos.length}</b> · con órdenes completas: <b>${conOrd}</b>.</p>`;
 }
 async function guardarContactoVeh(key,datos,res,nota,prox){
   const e={f:TODAY,res,nota:nota||'',u:USER.nombre,ts:Date.now()};if(prox)e.prox=prox;
@@ -1156,8 +1204,8 @@ async function procesarHistorial(files){
     pResHtml+=box.outerHTML;const r=$('#pRes');if(r)r.innerHTML=pResHtml;
   }
 }
-function render(){if(!USER)return;({hoy:renderHoy,cartera:renderCartera,caso:renderCaso,semana:renderSemana,prospeccion:renderProspeccion,importar:renderImportar,manual:renderManual})[tab]()}
-let rq=0;function scheduleRender(){if(rq)return;rq=requestAnimationFrame(()=>{rq=0;const a=document.activeElement;if(a&&a.closest&&a.closest('#semana,#prospeccion')&&/INPUT|SELECT|TEXTAREA/.test(a.tagName))return;render()})}
+function render(){if(!USER)return;({hoy:renderHoy,cartera:renderCartera,caso:renderCaso,semana:renderSemana,prospeccion:renderProspeccion,historial:renderHistorial,importar:renderImportar,manual:renderManual})[tab]()}
+let rq=0;function scheduleRender(){if(rq)return;rq=requestAnimationFrame(()=>{rq=0;const a=document.activeElement;if(a&&a.closest&&a.closest('#semana,#prospeccion,#historial')&&/INPUT|SELECT|TEXTAREA/.test(a.tagName))return;render()})}
 function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manual')manNuevas=new Set(noVistas().map(n=>n.id));tab=t;if(t!=='manual')pref('tab',t==='caso'?'cartera':t);document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x.dataset.t===t)));document.querySelectorAll('section.scr').forEach(s=>s.hidden=s.id!==t);render();if(t==='manual')marcarVisto();else actualizarAviso();window.scrollTo(0,0)}
 
 
@@ -1165,6 +1213,7 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manu
    Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
    (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
 const NOVEDADES=[
+ {id:'2026-10-29a',fecha:'2026-10-29',titulo:'Nueva pestaña: Historial de vehículos',texto:'Busca por nombre, placa, vehículo, VIN, teléfono o número de OT y ve todas las órdenes de ese vehículo con sus puntos, estados y montos, sin entrar a Clear Mechanic. En Prospección, el detalle de cada cliente tiene el botón “Ver historial completo”. Para activarla, el jefe debe volver a subir el reporte de Cotizaciones en Prospección.',sec:'m-historial'},
  {id:'2026-10-28a',fecha:'2026-10-28',titulo:'Nueva pestaña: Prospección de servicios',texto:'Ahora puedes ver a los clientes que hicieron su servicio de mantenimiento y no han regresado (entre 12 y 24 meses) y a los que ya casi les toca. Cada uno muestra su historial de servicios, kilometraje, trabajos preventivos sugeridos y un mensaje de WhatsApp listo. El historial se carga desde la misma pestaña con el reporte de Cotizaciones.',sec:'m-pros'},
  {id:'2026-10-27a',fecha:'2026-10-27',titulo:'Cuánto se recuperó por cada orden',texto:'Ahora puedes ver el detalle de lo recuperado orden por orden: toca “Recuperado total” en Cartera, “ver detalle” en Semana (de la semana y del mes) o la casilla de Hoy. En Cartera hay un filtro “Con recuperado” (incluye las autorizaciones parciales) y una columna “Recuperado” junto a lo pendiente de cada caso.',sec:'m-cartera'},
  {id:'2026-10-26a',fecha:'2026-10-26',titulo:'Detalle de lo recuperado esta semana',texto:'En “Hoy”, toca la casilla “Recuperado esta semana” y verás solo los casos que se autorizaron, con los puntos aprobados y su monto.',sec:'m-hoy'},
@@ -1197,6 +1246,7 @@ const MAN=[
  {id:'m-semana',r:0,t:'Semana y respaldo',h:`<ul><li><b>Semana:</b> el reporte del sábado: casos asignados, contactos, autorizados, lo recuperado y el incentivo del mes. Se llena solo con lo que se registra en “Hoy”. Junto a lo recuperado se ve cuánto de eso es <b>mano de obra</b> (M.O.), también en el panel del incentivo. <b>ver detalle</b> (semana) y <b>Ver detalle por orden</b> (mes) listan cada orden con lo que se recuperó.</li><li><b>Cierre mensual:</b> abajo del incentivo se ve el historial de meses cerrados (meta, porcentajes, recuperado, incentivo). El jefe de taller guarda el cierre de cada mes al terminar (idealmente con la meta y los porcentajes ya definidos para ese mes).</li><li><b>Respaldo</b> (asesor y jefe): en Semana → Respaldo, “Descargar respaldo (Excel)”. Hazlo cada sábado y guárdalo solo en tu computadora; trae datos de clientes y no debe enviarse por WhatsApp ni subirse a internet.</li></ul>`},
  {id:'m-carga',r:1,t:'Cada lunes: carga de Clear Mechanic',h:`<p>La carga normalmente la hace el <b>jefe de taller</b>, pero el asesor también puede. Son <b>dos reportes</b> de Clear Mechanic, de los <b>últimos 30 días</b>:</p><ol><li>“Reporte de Actividad – <b>Cotizaciones</b>”</li><li>“Reporte de Actividad – <b>Formas de Inspección</b>” (trae el enlace de fotos y videos de cada orden)</li></ol><ul><li>En <b>Importar Clear Mechanic</b> arrastra los dos archivos juntos (o uno por uno, en cualquier orden): el sistema reconoce cuál es cuál.</li><li>Crea los casos nuevos, detecta a los clientes que ya aprobaron y asigna a cada caso su enlace. No duplica nada ni borra lo que ya se registró.</li><li>Si en “Hoy” aparece “Última carga de Clear Mechanic hace X días”, hay que cargar los reportes.</li><li><b>Lo registrado en la herramienta manda sobre el Excel:</b> si un caso está Recuperado, En taller, En negociación o Perdido, la carga no le cambia el estado ni lo recuperado aunque en Clear Mechanic siga como pendiente. Cuando se recupera un caso y Clear Mechanic abre una orden nueva, esa orden es otra OT y no se cuenta dos veces.</li></ul>`},
  {id:'m-pros',r:0,t:'Prospección de servicios de mantenimiento',h:`<p>Esta pestaña arma, con el historial de servicios <b>aprobados</b> en Clear Mechanic (menor, intermedio, mayor, mayor completo y caja automática), la lista de clientes a quienes conviene contactar para su próximo mantenimiento.</p><ul><li><b>Vencidos:</b> su último servicio fue hace entre 12 y 24 meses. Los de más de 24 meses se dejan fuera porque probablemente ya no tienen el vehículo.</li><li><b>Próximos a servicio:</b> ya pasó el 85% del tiempo que normalmente tardan entre un servicio y el siguiente.</li><li><b>Ya en contacto:</b> alguien los contactó hace poco o quedó una cita; no se vuelven a llamar todavía.</li><li>Toca un cliente: verás cada servicio con su fecha, kilometraje y monto, los trabajos preventivos sugeridos y el mensaje de WhatsApp listo. Registra el resultado: <b>Mensaje enviado, Sin respuesta, Agendó cita, Más adelante, Ya vino</b> (servicio que no quedó cotizado en Clear Mechanic) o <b>No tiene el vehículo</b>.</li><li>Si el cliente ya tiene un caso abierto de cotización, aparece marcado para no llamarlo dos veces por temas distintos.</li><li><b>Cargar historial:</b> sube el reporte de Cotizaciones con el rango largo (desde el 1 de enero de 2025). No crea casos ni toca la cartera. La carga semanal de Importar también lo va actualizando.</li><li>El jefe de taller edita aquí qué cuenta como servicio, los trabajos sugeridos por kilometraje y los modelos diésel.</li></ul>`},
+ {id:'m-historial',r:0,t:'Historial de vehículos',h:`<p>Busca por <b>nombre, placa, vehículo, VIN, teléfono o número de OT</b> y verás todas las órdenes de ese vehículo: fecha, kilometraje y cada punto con su estado (aprobado, rechazado o pendiente) y su monto. Así no hace falta entrar a Clear Mechanic para revisar qué se le ha hecho o cotizado.</p><ul><li>Escribe varias palabras para acotar (por ejemplo, <i>Hilux Mendez</i>).</li><li>Si la orden tiene un caso de cotización, aparece el enlace <b>Ver caso</b>.</li><li>Desde Prospección, el detalle de cada cliente tiene el botón <b>Ver historial completo</b>.</li><li>Solo incluye lo que viene en los reportes de Cotizaciones cargados en <b>Prospección → Cargar historial</b> y en la carga semanal.</li></ul>`},
  {id:'m-jefe',r:2,t:'Solo jefe de taller: ajustes y usuarios',h:`<ul><li><b>Semana → Ajustes:</b> casos por día, meta mensual y porcentajes del incentivo. Después de cambiar los casos por día usa “Rehacer agenda” en Hoy para aplicarlo.</li><li><b>Caso cerrado como En taller o Perdido que en realidad fue recuperado:</b> si el caso <b>ya tiene monto autorizado registrado</b>, ábrelo y toca <b>Marcar como Recuperado</b> (solo cambia el estado). Si <b>no</b> tiene monto, toca <b>Registrar recuperación</b>. Ahí escribes lo que el cliente autorizó (total o parcial) y una nota; queda como recuperado (semana, mes e incentivo) y la bitácora anota que fue corrección del jefe.</li><li><b>Caso que ya estaba autorizado antes:</b> si la carga de Clear Mechanic contó como “recuperado” un caso que el cliente ya había autorizado antes (Clear Mechanic no lo tenía marcado), abre el caso y toca <b>Quitar de lo recuperado (ya estaba autorizado)</b>. Se retiran esos montos de lo recuperado, del incentivo y de la semana, y la bitácora conserva el historial con tu nota. Si ya habías guardado el cierre de ese mes, vuelve a guardarlo para que se actualice.</li><li><b>Recuperación con descuento:</b> si el cliente autorizó todo pero se facturó con descuento y el caso sigue mostrando una diferencia pendiente, abre el caso y toca <b>Ajustar a recuperación total (descuento)</b>. El monto recuperado no cambia; la diferencia queda registrada como descuento (con tu nota en la bitácora) y el caso pasa a 100% recuperado. La ventana sugiere la diferencia exacta, con centavos. Si el caso ya tiene descuento, el botón pasa a <b>Editar descuento</b> para corregir el monto total. Para evitarlo en adelante, el asesor debe registrar en “Autorizó” el monto cotizado y dejar el descuento para el jefe.</li><li><b>Cierre mensual:</b> en Semana → Cierre mensual elige el mes y toca “Guardar cierre”. Se guardan la meta y los porcentajes <b>actuales</b>, lo recuperado, las autorizaciones y el incentivo que salió, para que no se pierdan si después cambias los ajustes. Si vuelves a cerrar el mismo mes, se reemplaza (pide confirmación). Primero ajusta la meta y los % del mes, luego cierra.</li><li><b>Usuarios y accesos</b> (Semana → Ajustes): agregar usuarios con su rol (consulta, asesor o jefe), restablecer el PIN de alguien y desactivar un acceso. Los usuarios no se borran, solo se desactivan.</li><li>Si pasan más de 7 días sin respaldo, en “Hoy” te sale un aviso.</li></ul>`},
  {id:'m-reglas',r:0,t:'Reglas de oro',h:`<ul><li>Registra <b>cada</b> contacto el mismo día: la bitácora es la prueba del trabajo.</li><li>Nada se cierra sin motivo: “Perdido” siempre lleva razón.</li><li>No compartas tu PIN y toca <b>Salir</b> al terminar.</li><li>Si algo se ve raro o no carga: recarga la página (Ctrl + F5 en computadora). Si sigue igual, avisa al jefe de taller con una captura.</li></ul>`}
 ];
@@ -1221,10 +1271,11 @@ function renderManual(){
 /* ================= EVENTOS ================= */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec],#cierreGo,[data-addhoy],[data-rec],[data-ptab],[data-vh],[data-pres],[data-pcopy],#pSave,#pDef');if(!t)return;
+  const t=e.target.closest('[data-go],[data-ver],[data-a],[data-copy],[data-sem],#reAg,#cSave,#salir,#bkp,#cpin,#uAdd,[data-upin],[data-uact],#novX,#manPrint,[data-sec],#cierreGo,[data-addhoy],[data-rec],[data-ptab],[data-vh],[data-pres],[data-pcopy],#pSave,#pDef,[data-hist]');if(!t)return;
   if(t.id==='salir'){sess('user',null);location.reload();return}
   if(t.dataset.rec){e.preventDefault();return dlgRec(t.dataset.rec)}
   if(t.dataset.ptab){prosTab=t.dataset.ptab;return renderProspeccion()}
+  if(t.dataset.hist){const v=S.veh[t.dataset.hist];hisBus=v?(v.placa||v.nombre||''):'';closeDlg();return go('historial')}
   if(t.dataset.vh)return dlgVeh(t.dataset.vh);
   if(t.dataset.pres)return accionVeh(t.dataset.pk,t.dataset.pres);
   if(t.dataset.pcopy){const m=$('#pMsg');try{await navigator.clipboard.writeText(m.textContent);toast('Mensaje copiado')}catch(_){toast('No se pudo copiar: selecciona el texto')}return}
@@ -1255,7 +1306,7 @@ document.addEventListener('click',async e=>{
     try{await setDoc(doc(db,'crm_config','zona10'),cfg,{merge:true});toast('Ajustes guardados · usa “Rehacer agenda” para aplicarlos hoy')}catch(err){toast('No se pudo guardar: '+(err.code||err.message))}return}
 });
 document.addEventListener('change',e=>{if(e.target.id==='fileP'){procesarHistorial([...e.target.files]);e.target.value='';return}if(e.target.id==='pMarca'){prosMarca=e.target.value;$('#pLista').innerHTML=pLista();return}if(e.target.id==='pDie'){prosDie=e.target.value;$('#pLista').innerHTML=pLista();return}if(e.target.id==='fEst'){fEst=e.target.value;renderCartera()}if(e.target.id==='cierreMes'){cierreSel=e.target.value;renderSemana()}});
-document.addEventListener('input',e=>{if(e.target.id==='pBus'){prosBus=e.target.value;$('#pLista').innerHTML=pLista();return}if(e.target.id==='fBus'){fBus=e.target.value;const p=e.target.selectionStart;renderCartera();const i=$('#fBus');i.focus();i.setSelectionRange(p,p)}});
+document.addEventListener('input',e=>{if(e.target.id==='hBus'){hisBus=e.target.value;$('#hRes').innerHTML=hResultados();return}if(e.target.id==='pBus'){prosBus=e.target.value;$('#pLista').innerHTML=pLista();return}if(e.target.id==='fBus'){fBus=e.target.value;const p=e.target.selectionStart;renderCartera();const i=$('#fBus');i.focus();i.setSelectionRange(p,p)}});
 $('#ov').addEventListener('click',e=>{if(e.target.id==='ov')closeDlg()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDlg()});
 $('#file').addEventListener('change',e=>{procesarArchivos([...e.target.files]);e.target.value=''});
@@ -1278,7 +1329,7 @@ function entrar(u){
   document.querySelector('nav button[data-t="importar"]').hidden=!canAct();
   const b=$('#ban');b.className='ban';b.textContent=BAN_OK;
   startSync();
-  const t=pref('tab');go(['hoy','cartera','semana','prospeccion','importar'].includes(t)?t:'hoy');
+  const t=pref('tab');go(['hoy','cartera','semana','prospeccion','historial','importar'].includes(t)?t:'hoy');
 }
 async function loginUI(){
   const body=$('#loginBody');
