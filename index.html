@@ -685,12 +685,12 @@ function dlgEmbudo(k){
 function dlgFechaRec(ot){
   const c=S.casos[ot];if(!c||!isJefe())return;
   const g={};for(const r of c.recuperos||[])g[r.fecha]=(g[r.fecha]||0)+(r.monto||0);
-  const fs=Object.keys(g).sort();if(!fs.length){toast('Este caso no tiene recuperaciones');return}
+  const fs=Object.keys(g).sort().reverse();if(!fs.length){toast('Este caso no tiene recuperaciones');return}
   const ult=f=>addDays(f.slice(0,7)+'-01',-1);
   openDlg(`<h2>Cambiar fecha de recuperación · OT ${esc(ot)}</h2>
-   <p class="sm">Úsalo cuando Clear Mechanic no trajo la fecha de aprobación y el monto cayó en el mes equivocado. Cambia la fecha de <b>todas</b> las recuperaciones del caso que tengan la fecha elegida. Los montos no cambian y la bitácora conserva el ajuste.</p>
+   <p class="sm">Úsalo cuando Clear Mechanic no trajo la fecha de aprobación y el monto cayó en el mes equivocado. Elige la fecha que hoy aparece en el mes equivocado (la más reciente va primero). Cambia la fecha de <b>todas</b> las recuperaciones del caso que tengan esa fecha. Los montos no cambian y la bitácora conserva el ajuste.</p>
    <label>Fecha actual<select id="fo">${fs.map(f=>`<option value="${f}">${fmtD(f)} ${f.slice(0,4)} · ${Q(g[f])}</option>`).join('')}</select></label>
-   <label>Nueva fecha<input id="fn" type="date" max="${TODAY}" value="${ult(fs[fs.length-1])}"></label>
+   <label>Nueva fecha<input id="fn" type="date" max="${TODAY}" value="${ult(fs[0])}"></label>
    <label>Motivo (obligatorio)<input id="fm" placeholder="Ej.: se aprobó el 26 de octubre y la carga se hizo tarde"></label>`,()=>{
     const o=$('#fo').value,n=$('#fn').value,mt=$('#fm').value.trim();
     if(!n||n>TODAY){toast('Elige una fecha válida (no futura)');return false}
@@ -699,6 +699,7 @@ function dlgFechaRec(ot){
     const nuevo=(c.recuperos||[]).map(r=>r.fecha===o?{...r,fecha:n}:r);
     wr(ot,['recuperos',nuevo,'bitacora',arrayUnion(ent('Sistema','Ajuste del jefe: fecha de recuperación cambiada','De '+o+' a '+n+' · '+Q2(g[o])+' · '+mt))]).then(k=>k&&toast('Fecha cambiada: ahora cuenta en '+mesTxt(n.slice(0,7))));
   });
+  $('#fo').onchange=()=>{$('#fn').value=ult($('#fo').value)};
 }
 function dlgRec(k,m){
   const ws=weekStart(TODAY),dia=/^\d{4}-\d\d-\d\d$/.test(m||'')?m:null,mes=dia?dia.slice(0,7):(m||TODAY.slice(0,7));

@@ -374,9 +374,11 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(200);
   }
   // Jefe: cambiar la fecha de una recuperación (cayó en el mes equivocado)
+  await b.page.evaluate(()=>{__DB.crm_casos['5399'].recuperos.push({fecha:'2025-01-15',monto:0,mo:0,tipo:'total',usuario:'t'});__notify()});
   await b.page.click('nav button[data-t="semana"]');await b.page.click('#semana button[data-rec="mes"]');await b.page.waitForTimeout(200);
   ok('Cambiar fecha: el jefe ve el enlace en el detalle del mes',!!(await b.page.$('#dlg [data-rfecha="5399"]')));
   await b.page.click('#dlg [data-rfecha="5399"]');await b.page.waitForTimeout(150);
+  ok('Cambiar fecha: la fecha más reciente va primero y queda elegida',await b.page.evaluate(()=>{const v=[...document.querySelectorAll('#fo option')].map(o=>o.value);return v.length===2&&v[0]>v[1]&&document.querySelector('#fo').value===v[0]}));
   await b.page.click('#dOk');await b.page.waitForTimeout(150);
   ok('Cambiar fecha: exige el motivo',/motivo/i.test(await b.page.textContent('#toast')));
   await b.page.fill('#fm','Se aprobó el mes anterior y la carga se hizo tarde');await b.page.click('#dOk');await b.page.waitForTimeout(500);
