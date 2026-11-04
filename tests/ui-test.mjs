@@ -374,6 +374,18 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('ya no se ofrece',!(await b.page.$('#caso button[data-a="marcarRec"]')));
     await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(200);
   }
+  // Jefe: cambiar la fecha de una recuperación (cayó en el mes equivocado)
+  await b.page.click('nav button[data-t="semana"]');await b.page.click('#semana button[data-rec="mes"]');await b.page.waitForTimeout(200);
+  ok('Cambiar fecha: el jefe ve el enlace en el detalle del mes',!!(await b.page.$('#dlg [data-rfecha="5399"]')));
+  await b.page.click('#dlg [data-rfecha="5399"]');await b.page.waitForTimeout(150);
+  await b.page.click('#dOk');await b.page.waitForTimeout(150);
+  ok('Cambiar fecha: exige el motivo',/motivo/i.test(await b.page.textContent('#toast')));
+  await b.page.fill('#fm','Se aprobó el mes anterior y la carga se hizo tarde');await b.page.click('#dOk');await b.page.waitForTimeout(500);
+  ok('Cambiar fecha: la recuperación pasa al mes anterior y los montos no cambian',await b.page.evaluate(()=>{const c=__DB.crm_casos['5399'];const m=new Date().toISOString().slice(0,7);return c.recuperos.length>0&&c.recuperos.every(r=>!String(r.fecha).startsWith(m))&&c.recuperos.reduce((a,r)=>a+r.monto,0)===5000}));
+  ok('Cambiar fecha: queda en la bitácora con el motivo',await b.page.evaluate(()=>__DB.crm_casos['5399'].bitacora.some(x=>x.canal==='Sistema'&&/fecha de recuperación cambiada/.test(x.resultado)&&/carga se hizo tarde/.test(x.nota))));
+  await b.page.click('#semana button[data-rec="mes"]');await b.page.waitForTimeout(200);
+  ok('Cambiar fecha: el detalle del mes ya no incluye esa orden',!/OT 5399/.test(await b.page.textContent('#dlg')));
+  await b.page.click('#dCancel');
   // Jefe agrega a Jacobo (consulta), Jacobo entra, jefe lo desactiva
   await b.page.click('#uAdd');await b.page.fill('#uN','Jacobo');await b.page.selectOption('#uR','consulta');await b.page.fill('#uP','12');await b.page.click('#dOk');await b.page.waitForTimeout(300);
   ok('usuario nuevo: exige 6 dígitos',/6 dígitos/.test(await b.page.textContent('#toast')));
