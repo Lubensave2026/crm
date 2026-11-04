@@ -87,11 +87,13 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('Cartera: la tabla tiene columnas Pendiente y Recuperado',/Pendiente/.test(await page.textContent('#cartera thead'))&&/Recuperado/.test(await page.textContent('#cartera thead')));
     await page.selectOption('#fEst','Abiertos');
     await page.click('#cartera button[data-rec="todo"]');await page.waitForTimeout(200);
+    ok('Cartera: la casilla Recuperado total muestra también lo recuperado este mes',await page.evaluate(()=>/Este mes \(.+\): Q[\d,]+/.test(document.querySelector('#kRecMes').textContent)));
     ok('Cartera: Recuperado total abre el detalle por orden con el total',await page.evaluate(()=>{const d=document.querySelector('#dlg').textContent;return /Recuperado total/.test(d)&&/OT 5381/.test(d)&&/Q22,699/.test(d)}));
     await page.keyboard.press('Escape');
     await page.click('nav button[data-t="semana"]');await page.waitForTimeout(200);
     await page.click('#semana a[data-rec="sem"]');await page.waitForTimeout(200);ok('Semana: ver detalle de la semana',/OT 5381/.test(await page.textContent('#dlg')));await page.keyboard.press('Escape');
     await page.click('#semana button[data-rec="mes"]');await page.waitForTimeout(200);ok('Semana: ver detalle del mes',/OT 5381/.test(await page.textContent('#dlg'))&&/Q22,699/.test(await page.textContent('#dlg')));await page.keyboard.press('Escape');
+    ok('Semana: el monto recuperado de un día abre solo las órdenes de ese día',await (async()=>{const bt=await page.$('#semana button[data-rec="dia"]');if(!bt)return false;const d=await bt.getAttribute('data-mes');await bt.click();await page.waitForTimeout(200);const t=await page.textContent('#dlg');await page.keyboard.press('Escape');return /solo ese día/.test(t)&&/Recuperado el/.test(t)&&/OT 5381/.test(t)&&/^\d{4}-\d\d-\d\d$/.test(d)})());
     ok('bitácora guarda usuario',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.some(b=>b.usuario==='Ricardo'&&/Autorizado/.test(b.resultado))));
     ok('bitácora conserva la entrada de importación',await page.evaluate(()=>__DB.crm_casos['5381'].bitacora.length===2));
     ok('asesor no ve Ajustes',!(await page.$('#cSave')));
@@ -288,7 +290,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await b.page.fill('#dM',String(dif-100.25));await b.page.fill('#dN','se corrige el descuento');await b.page.click('#dOk');await b.page.waitForTimeout(600);
   ok('editar: guarda el nuevo monto con centavos y deja bitácora con el anterior',await b.page.evaluate(d=>{const c=__DB.crm_casos['5399'];return c.descuento===Math.round((d-100.25)*100)/100&&c.bitacora.some(x=>/descuento corregido/.test(x.resultado)&&/antes/.test(x.nota))},dif));
   await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(250);
-  ok('Semana: fila de Descuentos aplicados',/Descuentos aplicados\s*Q/.test(await b.page.textContent('#semana')));
+  ok('Semana: fila de Descuentos aplicados',/Descuentos aplicados · ver detalle\s*Q/.test(await b.page.textContent('#semana')));
   // Caso que ya estaba autorizado: la importación lo detecta como recuperado y el jefe lo quita
   {
     const XL=(await import('xlsx')).default;
@@ -325,6 +327,9 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   ok('cierre: el diálogo avisa que el mes está en curso',/todavía está en curso/.test(await b.page.textContent('#dlg')));
   await b.page.click('#dOk');await b.page.waitForTimeout(500);
   ok('cierre: guardado con meta, % y incentivo del mes',await b.page.evaluate(m=>{const c=__DB.crm_cierres&&__DB.crm_cierres[m];return !!c&&c.recuperado===5000&&c.meta===60000&&c.pct1===1&&c.incentivo===50&&c.cerradoPor==='Byron'&&c.autorizados===1},mesAct));
+  await b.page.click('#semana [data-emb="desc"]');await b.page.waitForTimeout(200);
+  ok('Embudo: Descuentos aplicados abre el detalle con la orden y su monto',await b.page.evaluate(()=>{const d=document.querySelector('#dlg').textContent;return /Descuentos aplicados/.test(d)&&/OT 5399/.test(d)&&/Q\d/.test(d)}));
+  await b.page.click('#dCancel');
   await b.page.click('#cierre .toolbar [data-rec="mes"]');await b.page.waitForTimeout(200);
   ok('cierre: “Ver detalle por orden” abre el detalle del mes elegido con su total',await b.page.evaluate(()=>{const d=document.querySelector('#dlg').textContent;return /Recuperado de/.test(d)&&/Q5,000/.test(d)&&/5399/.test(d)}));
   await b.page.click('#dCancel');
