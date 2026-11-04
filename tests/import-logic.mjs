@@ -160,6 +160,41 @@ ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
   const pn=L.planImport(nueva,structuredClone(base),{hoy:HOY,usuario:'t'});
   ok('orden nueva ya aprobada (otra OT): no crea caso nuevo',pn.nuevos.some(x=>x.ot==='9999'),false);
 }
+// ---- Fecha real de aprobación de Clear Mechanic ----
+{
+  const H2='2026-11-04';
+  const cab=['OR #','Fecha / Hora de apertura de Orden','Nombre','Apellido','Móvil','Marca','Modelo','Año','Kilometraje','Placas','Tipo','Punto de Inspección','Cotización - Total','Cotización - M.O.','¿Aprobado o Rechazado?','Cotización - Fecha / Hora de Aprobación'];
+  const R=(ot,pt,tot,est,ap)=>[[ot,'2026-10-05','A','B','5555','K','M',2020,1000,'P1','Punto de Inspección',pt,'',0,est,ap],[ot,'2026-10-05','A','B','5555','K','M',2020,1000,'P1','Cotización - Total',pt,tot,0,est,ap]];
+  const caso=(rec,pa)=>({ot:'1',cliente:'A B',vehiculo:'K M 2020',placa:'P1',movil:'5555',km:'1000',fecha:'2026-10-05',estado:'Pendiente',sem:'amarillo',proximo:null,motivo:'',seg:{},bitacora:[],recuperos:rec,partidas:pa});
+  const pend={A:{punto:'A',total:1000,mo:0,estadoCM:'Rechazado',fechaCM:'2026-10-05',recuperada:false}};
+  // 1. Una aprobación nueva toma la fecha de aprobación, no la de la carga
+  let pl1=L.planImport([cab,...R('1','A',1000,'Aprobado por Cliente','2026-10-26T15:14:00')],{1:caso([],structuredClone(pend))},{hoy:H2,usuario:'t'});
+  ok('aprobación: el recupero nuevo toma la fecha de aprobación de CM',pl1.cambios[0].patch.recuperos[0].fecha,'2026-10-26');
+  // 2. Sin fecha de aprobación en el reporte: se usa la de la carga
+  pl1=L.planImport([cab,...R('1','A',1000,'Aprobado por Cliente','')],{1:caso([],structuredClone(pend))},{hoy:H2,usuario:'t'});
+  ok('aprobación: sin fecha en el reporte, se usa la de la carga',pl1.cambios[0].patch.recuperos[0].fecha,H2);
+  // 3. Una fecha futura no vale
+  pl1=L.planImport([cab,...R('1','A',1000,'Aprobado por Cliente','2026-12-31T10:00:00')],{1:caso([],structuredClone(pend))},{hoy:H2,usuario:'t'});
+  ok('aprobación: una fecha futura se ignora',pl1.cambios[0].patch.recuperos[0].fecha,H2);
+  // 4. Se corrige un recupero ya guardado con la fecha de la carga
+  const ya={A:{punto:'A',total:1000,mo:0,estadoCM:'Aprobado',fechaCM:'2026-10-05',recuperada:true}};
+  const guardado=caso([{fecha:H2,monto:1000,mo:0,tipo:'clear-mechanic',usuario:'t'}],structuredClone(ya));guardado.estado='Recuperado';
+  const pc=L.planImport([cab,...R('1','A',1000,'Aprobado por Cliente','2026-10-26T15:14:00')],{1:structuredClone(guardado)},{hoy:H2,usuario:'t'});
+  ok('corrección: el recupero guardado pasa a la fecha real',pc.cambios[0].patch.recuperosAll[0].fecha,'2026-10-26');
+  ok('corrección: cuenta 1 corregido por Q1,000',pc.stats.corregidos+'|'+pc.stats.montoCorregido,'1|1000');
+  ok('corrección: movimiento noviembre -1000 y octubre +1000',pc.stats.movido['2026-11']+'|'+pc.stats.movido['2026-10'],'-1000|1000');
+  ok('corrección: deja nota en la bitácora (canal Sistema)',pc.cambios[0].patch.bitacora.some(b=>b.canal==='Sistema'&&/Fecha de recuperación corregida/.test(b.resultado)),true);
+  // 5. Volver a cargar el mismo reporte ya no cambia nada
+  const corr=structuredClone(guardado);corr.recuperos[0].fecha='2026-10-26';
+  const p2=L.planImport([cab,...R('1','A',1000,'Aprobado por Cliente','2026-10-26T15:14:00')],{1:corr},{hoy:H2,usuario:'t'});
+  ok('corrección: la segunda carga no escribe nada',p2.cambios.length+p2.nuevos.length+p2.stats.corregidos,0);
+  // 6. Lo registrado a mano y lo que ya tiene fecha anterior no se toca
+  const manual=caso([{fecha:H2,monto:1000,mo:0,tipo:'total',usuario:'t'}],structuredClone(ya));
+  const pm=L.planImport([cab,...R('1','A',1000,'Aprobado por Cliente','2026-10-26T15:14:00')],{1:manual},{hoy:H2,usuario:'t'});
+  ok('corrección: un recupero registrado a mano no se toca',pm.stats.corregidos,0);
+  const antes=caso([{fecha:'2026-10-20',monto:1000,mo:0,tipo:'clear-mechanic',usuario:'t'}],structuredClone(ya));
+  ok('corrección: si la fecha guardada ya es anterior a la aprobación no se mueve',L.planImport([cab,...R('1','A',1000,'Aprobado por Cliente','2026-10-26T15:14:00')],{1:antes},{hoy:H2,usuario:'t'}).stats.corregidos,0);
+}
 // ---- Embudo de la cartera ----
 {
   const P=(t,e)=>({punto:'p'+t,total:t,mo:0,estadoCM:e,recuperada:false});
