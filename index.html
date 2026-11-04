@@ -188,7 +188,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--yellow-soft)}
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getAuth,signInAnonymously} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {initializeFirestore,collection,doc,onSnapshot,setDoc,updateDoc,getDoc,getDocs,writeBatch,runTransaction,arrayUnion,arrayRemove,FieldPath,query,orderBy,limit} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {initializeFirestore,collection,doc,onSnapshot,setDoc,updateDoc,getDoc,getDocs,writeBatch,runTransaction,arrayUnion,arrayRemove,FieldPath,query,orderBy,limit,where} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* La configuración web de Firebase es pública por diseño; la seguridad la dan las reglas de Firestore. */
 const FB_CFG={apiKey:"AIzaSyAf8qbial6VACkhtM6po9N97osPQ-hEnac",authDomain:"crm-lube-n-save.firebaseapp.com",projectId:"crm-lube-n-save",storageBucket:"crm-lube-n-save.firebasestorage.app",messagingSenderId:"483911966336",appId:"1:483911966336:web:779cc512b9ab6a3edb9065"};
@@ -1114,15 +1114,35 @@ function renderImportar(){
 /* ================= PROSPECCIÓN DE SERVICIOS DE MANTENIMIENTO ================= */
 let prosTab='vencido',prosBus='',prosMarca='',prosDie='',pResHtml='',vehUnsub=null,vehWait=null;
 const prosCfg=()=>({...PROS_DEF,...(S.cfg.pros||{})});
+/* Historial de vehículos con copia local (IndexedDB): se descarga completo solo la primera vez (y cada 14 días por seguridad);
+   después solo llegan los documentos que cambiaron (campo "ua" = última actualización), también en tiempo real. */
+const VEH_DB='lnsveh_'+FB_CFG.projectId,VEH_REFRESCO=14*864e5,VEH_TRASLAPE=10*60*1000;
+const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open(VEH_DB,1);r.onupgradeneeded=()=>{r.result.createObjectStore('veh');r.result.createObjectStore('meta')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const idbLeer=d=>new Promise((res,rej)=>{const t=d.transaction(['veh','meta']),out={veh:{},meta:null};
+  t.objectStore('meta').get('m').onsuccess=e=>{out.meta=e.target.result||null};
+  t.objectStore('veh').openCursor().onsuccess=e=>{const c=e.target.result;if(c){out.veh[c.key]=c.value;c.continue()}};
+  t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error)});
+const idbGuardar=(d,docs,meta,limpiar)=>new Promise((res,rej)=>{const t=d.transaction(['veh','meta'],'readwrite'),v=t.objectStore('veh');
+  if(limpiar)v.clear();for(const k in docs)v.put(docs[k],k);t.objectStore('meta').put(meta,'m');t.oncomplete=()=>res();t.onerror=()=>rej(t.error)});
 function ensureVeh(){
   if(ready.veh)return Promise.resolve();
   if(!vehWait){
-    vehWait=new Promise(res=>{
-      vehUnsub=onSnapshot(collection(db,'crm_vehiculos'),snap=>{
-        snap.docChanges().forEach(d=>{if(d.type==='removed')delete S.veh[d.doc.id];else S.veh[d.doc.id]=d.doc.data()});
-        if(!ready.veh){ready.veh=true;res()}scheduleRender();
-      },e=>{syncErr(e);res()});
-    });
+    vehWait=(async()=>{
+      let dbi=null,meta=null;
+      try{dbi=await idb();const c=await idbLeer(dbi);if(c.meta&&c.meta.fullAt&&Date.now()-c.meta.fullAt<VEH_REFRESCO){S.veh=c.veh;meta=c.meta}}catch(_){dbi=null}
+      const maxUa=()=>Object.values(S.veh).reduce((a,v)=>Math.max(a,v.ua||0),0);
+      const guardar=(docs,limpiar)=>{if(dbi)idbGuardar(dbi,docs,{fullAt:meta.fullAt,since:maxUa()},limpiar).catch(()=>{})};
+      if(!meta){
+        try{const snap=await getDocs(collection(db,'crm_vehiculos'));S.veh={};snap.docs.forEach(d=>{S.veh[d.id]=d.data()});meta={fullAt:Date.now()};guardar(S.veh,true)}
+        catch(e){syncErr(e);return}
+      }
+      ready.veh=true;scheduleRender();
+      const desde=Math.max(0,maxUa()-VEH_TRASLAPE);
+      vehUnsub=onSnapshot(query(collection(db,'crm_vehiculos'),where('ua','>',desde)),snap=>{
+        const ch={};snap.docChanges().forEach(d=>{if(d.type!=='removed'){S.veh[d.doc.id]=d.doc.data();ch[d.doc.id]=S.veh[d.doc.id]}});
+        if(Object.keys(ch).length){guardar(ch,false);scheduleRender()}
+      },syncErr);
+    })();
     unsubs.push(()=>{vehUnsub&&vehUnsub();vehUnsub=null;vehWait=null});
   }
   return vehWait;
@@ -1235,7 +1255,7 @@ function renderHistorial(){
 }
 async function guardarContactoVeh(key,datos,res,nota,prox){
   const e={f:TODAY,res,nota:nota||'',u:USER.nombre,ts:Date.now()};if(prox)e.prox=prox;
-  try{await setDoc(doc(db,'crm_vehiculos',key),{...datos,contactos:arrayUnion(e),actualizado:iso()},{merge:true});return true}
+  try{await setDoc(doc(db,'crm_vehiculos',key),{...datos,contactos:arrayUnion(e),actualizado:iso(),ua:Date.now()},{merge:true});return true}
   catch(err){toast('No se pudo guardar: '+(err.code||err.message));return false}
 }
 function accionVeh(key,res){
@@ -1253,7 +1273,7 @@ async function guardarVehiculos(rows,archivo,box,historial){
   if(plan.error){if(box)box.innerHTML=vacio('El archivo no tiene el formato esperado','Faltan columnas: '+plan.error.join(', ')+'. Descarga el “Reporte de Actividad – Cotizaciones” de Clear Mechanic.');return null}
   if(box)box.innerHTML=`<div class="panel"><b class="prog">Guardando historial en Firebase…</b></div>`;
   for(let i=0;i<plan.escribir.length;i+=450){
-    const b=writeBatch(db);plan.escribir.slice(i,i+450).forEach(({key,data})=>b.set(doc(db,'crm_vehiculos',key),data,{merge:true}));
+    const b=writeBatch(db);plan.escribir.slice(i,i+450).forEach(({key,data})=>b.set(doc(db,'crm_vehiculos',key),{...data,ua:Date.now()},{merge:true}));
     if(box)box.querySelector('.prog').textContent='Guardando historial en Firebase… '+Math.min(i+450,plan.escribir.length)+' de '+plan.escribir.length;
     await b.commit();
   }
