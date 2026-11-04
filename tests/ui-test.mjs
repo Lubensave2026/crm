@@ -205,10 +205,10 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     const sv=(a,ot,t,km,x)=>({f:d(a),ot,t,km,m:500,...(x?{x:1}:{})});
     const cas=Object.values(__DB.crm_casos).find(c=>c.placa&&!['Recuperado','En taller','Perdido'].includes(c.estado));
     __DB.crm_vehiculos=__DB.crm_vehiculos||{};
-    __DB.crm_vehiculos.pTEST111={key:'pTEST111',placa:'TEST111',nombre:'Carlos Mendez',movil:'55550001',marca:'Toyota',modelo:'Hilux',anio:'2018',serv:{a:sv(600,'t1','Servicio menor',60000),b:sv(420,'t2','Servicio mayor',76000)},ult:d(420)};
-    __DB.crm_vehiculos.pTEST222={key:'pTEST222',placa:'TEST222',nombre:'Ana Lopez',movil:'55550002',marca:'Honda',modelo:'CR-V',anio:'2016',serv:{a:sv(330,'t3','Servicio menor',40000),b:sv(160,'t4','Servicio intermedio',46000)},ult:d(160)};
-    __DB.crm_vehiculos.pTEST333={key:'pTEST333',placa:'TEST333',nombre:'Luis Perez',movil:'55550003',marca:'Kia',modelo:'Rio',anio:'2020',serv:{a:sv(500,'t5','Servicio menor',30000)},ult:d(500)};
-    __DB.crm_vehiculos.pTEST444={key:'pTEST444',placa:cas?cas.placa:'TEST444',nombre:'Mia Soto',movil:'55550004',marca:'Mazda',modelo:'3',anio:'2019',serv:{a:sv(450,'t6','Servicio menor',35000)},ult:d(450)};
+    __DB.crm_vehiculos.pTEST111={key:'pTEST111',ua:Date.now(),placa:'TEST111',nombre:'Carlos Mendez',movil:'55550001',marca:'Toyota',modelo:'Hilux',anio:'2018',serv:{a:sv(600,'t1','Servicio menor',60000),b:sv(420,'t2','Servicio mayor',76000)},ult:d(420)};
+    __DB.crm_vehiculos.pTEST222={key:'pTEST222',ua:Date.now(),placa:'TEST222',nombre:'Ana Lopez',movil:'55550002',marca:'Honda',modelo:'CR-V',anio:'2016',serv:{a:sv(330,'t3','Servicio menor',40000),b:sv(160,'t4','Servicio intermedio',46000)},ult:d(160)};
+    __DB.crm_vehiculos.pTEST333={key:'pTEST333',ua:Date.now(),placa:'TEST333',nombre:'Luis Perez',movil:'55550003',marca:'Kia',modelo:'Rio',anio:'2020',serv:{a:sv(500,'t5','Servicio menor',30000)},ult:d(500)};
+    __DB.crm_vehiculos.pTEST444={key:'pTEST444',ua:Date.now(),placa:cas?cas.placa:'TEST444',nombre:'Mia Soto',movil:'55550004',marca:'Mazda',modelo:'3',anio:'2019',serv:{a:sv(450,'t6','Servicio menor',35000)},ult:d(450)};
     __notify();
   });
   await b.page.click('nav button[data-t="prospeccion"]');await b.page.waitForSelector('#pLista',{timeout:10000});await b.page.waitForTimeout(300);
@@ -382,6 +382,20 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('ya no se ofrece',!(await b.page.$('#caso button[data-a="marcarRec"]')));
     await b.page.click('nav button[data-t="semana"]');await b.page.waitForTimeout(200);
   }
+  // ---- Descarga del historial: completa solo la primera vez, luego solo cambios ----
+  ok('Historial: la primera vez se descargó completo una sola vez y quedó guardado en el dispositivo',await b.page.evaluate(async()=>{const dbs=await indexedDB.databases();const n=dbs.find(d=>/^lnsveh_/.test(d.name));if(!n)return false;const d=await new Promise(r=>{const q=indexedDB.open(n.name);q.onsuccess=()=>r(q.result)});const c=await new Promise(r=>{const q=d.transaction('veh').objectStore('veh').count();q.onsuccess=()=>r(q.result)});d.close();return c>50&&globalThis.__fullReads===1}));
+  await b.page.reload();await b.page.waitForSelector('nav button[data-t="prospeccion"]');
+  await b.page.click('nav button[data-t="prospeccion"]');await b.page.waitForSelector('#pLista',{timeout:10000});await b.page.waitForTimeout(400);
+  ok('Historial: al abrir otra vez no se descarga todo de nuevo (usa la copia del dispositivo)',await b.page.evaluate(()=>(globalThis.__fullReads||0)===0));
+  await b.page.click('[data-ptab="todos"]');await b.page.waitForTimeout(150);
+  ok('Historial: con la copia local se ven igual los vehículos y sus listas',(await b.page.$$('#pLista tr[data-vh]')).length>=1);
+  await b.page.evaluate(()=>{__DB.crm_vehiculos.pNUEVO99={key:'pNUEVO99',ua:Date.now()+1000,placa:'NUEVO99',nombre:'Zoe Nuevo',marca:'Kia',modelo:'Rio',anio:'2021',serv:{a:{f:'2025-02-01',ot:'n1',t:'Servicio menor',km:1000,m:1}},ord:{n1:{f:'2025-02-01',km:1000,p:[]}},uo:'2025-02-01',ult:'2025-02-01'};__notify()});await b.page.waitForTimeout(300);
+  await b.page.click('nav button[data-t="historial"]');await b.page.waitForSelector('#hBus');await b.page.fill('#hBus','nuevo99');await b.page.waitForTimeout(200);
+  ok('Historial: un cambio hecho por otro usuario llega solo (sin descargar todo)',(await b.page.$$('#hRes details')).length===1&&(await b.page.evaluate(()=>(globalThis.__fullReads||0)===0)));
+  // La copia vence a los 14 días: entonces sí se vuelve a descargar completa
+  await b.page.evaluate(async()=>{const dbs=await indexedDB.databases();const n=dbs.find(d=>/^lnsveh_/.test(d.name));const d=await new Promise(r=>{const q=indexedDB.open(n.name);q.onsuccess=()=>r(q.result)});await new Promise(r=>{const t=d.transaction('meta','readwrite');t.objectStore('meta').put({fullAt:Date.now()-15*864e5,since:0},'m');t.oncomplete=()=>r()});d.close()});
+  await b.page.reload();await b.page.waitForSelector('nav button[data-t="prospeccion"]');await b.page.click('nav button[data-t="prospeccion"]');await b.page.waitForSelector('#pLista',{timeout:10000});await b.page.waitForTimeout(400);
+  ok('Historial: con la copia de más de 14 días se vuelve a descargar completo',await b.page.evaluate(()=>globalThis.__fullReads===1));
   // Jefe: cambiar la fecha de una recuperación (cayó en el mes equivocado)
   await b.page.evaluate(()=>{__DB.crm_casos['5399'].recuperos.push({fecha:'2025-01-15',monto:0,mo:0,tipo:'total',usuario:'t'});__notify()});
   await b.page.click('nav button[data-t="semana"]');await b.page.click('#semana button[data-rec="mes"]');await b.page.waitForTimeout(200);
