@@ -324,6 +324,13 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   ok('cierre: el diálogo avisa que el mes está en curso',/todavía está en curso/.test(await b.page.textContent('#dlg')));
   await b.page.click('#dOk');await b.page.waitForTimeout(500);
   ok('cierre: guardado con meta, % y incentivo del mes',await b.page.evaluate(m=>{const c=__DB.crm_cierres&&__DB.crm_cierres[m];return !!c&&c.recuperado===5000&&c.meta===60000&&c.pct1===1&&c.incentivo===50&&c.cerradoPor==='Byron'&&c.autorizados===1},mesAct));
+  await b.page.click('#cierre .toolbar [data-rec="mes"]');await b.page.waitForTimeout(200);
+  ok('cierre: “Ver detalle por orden” abre el detalle del mes elegido con su total',await b.page.evaluate(()=>{const d=document.querySelector('#dlg').textContent;return /Recuperado de/.test(d)&&/Q5,000/.test(d)&&/5399/.test(d)}));
+  await b.page.click('#dCancel');
+  await b.page.evaluate(()=>{const m=new Date(Date.now()-40*864e5).toISOString().slice(0,7);__DB.crm_cierres[m]={mes:m,meta:60000,pct1:1,pct2:2,base:'total',recuperado:0,recuperadoMO:0,autorizados:0,incentivo:0,cerradoPor:'Byron',cerrado:new Date().toISOString()};__notify()});await b.page.waitForTimeout(300);
+  await b.page.click('#cierre tbody tr:last-child [data-rec="mes"]');await b.page.waitForTimeout(200);
+  ok('cierre: “Ver detalle” de un mes anterior muestra ese mes sin casos',await b.page.evaluate(()=>{const d=document.querySelector('#dlg').textContent;return /Recuperado de/.test(d)&&/Todavía no hay casos autorizados/.test(d)}));
+  await b.page.click('#dCancel');
   ok('cierre: aparece en la tabla de meses cerrados',/Q50/.test(await b.page.textContent('#cierre'))&&/Byron/.test(await b.page.textContent('#cierre')));
   await b.page.click('#cierreGo');await b.page.waitForTimeout(150);
   ok('cierre: si ya existe, avisa que se reemplazará',/Ya existe un cierre/.test(await b.page.textContent('#dlg')));
