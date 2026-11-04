@@ -221,7 +221,22 @@ const pk=p=>String(p||'').replace(/[.\/~*\[\]`]/g,'_').trim()||'_';
 const otId=o=>String(o).replace(/\.0$/,'').trim().replace(/[^\w\-]/g,'-');
 
 function pendientes(c){return Object.values(c.partidas).filter(p=>p.total>0&&!p.recuperada&&p.estadoCM!=='Aprobado')}
-function parcialQ(c,k){return (c.recuperos||[]).filter(r=>r.tipo==='parcial').reduce((a,r)=>a+(r[k]||0),0)}
+function parcialQ(c,k){const rs=c.recuperos||[];return rs.filter(r=>r.tipo==='parcial').reduce((a,r)=>a+(r[k]||0),0)-(k==='monto'?rs.reduce((a,r)=>a+(r.abs||0),0):0)}
+const q2=n=>'Q'+(Math.round((n||0)*100)/100).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});
+/* Recuperos detectados en Clear Mechanic: (1) valen lo que Clear Mechanic tiene aprobado hoy, no el precio viejo; (2) lo que ya se había contado en una autorización parcial no se cuenta dos veces. Devuelve {ex,ab,antes,despues}. */
+function normRecuperos(c){
+  const rs=c.recuperos||[],cm=rs.filter(r=>r.tipo==='clear-mechanic'),suma=()=>r2(rs.reduce((a,r)=>a+(r.monto||0),0));
+  const antes=suma();if(!cm.length)return {ex:0,ab:0,antes,despues:antes};
+  const E=r2(Object.values(c.partidas||{}).filter(p=>p.recuperada&&p.estadoCM==='Aprobado').reduce((a,p)=>a+(p.total||0),0));
+  const ord=[...cm].sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+  const quitar=(n,abs)=>{let hecho=0;for(const r of ord){if(n-hecho<=0.004)break;const q=Math.min(r.monto||0,n-hecho);if(q<=0)continue;const f=q/r.monto;r.mo=r2((r.mo||0)*(1-f));r.monto=r2(r.monto-q);if(abs)r.abs=r2((r.abs||0)+q);hecho=r2(hecho+q)}return hecho};
+  const C=()=>r2(cm.reduce((a,r)=>a+(r.monto||0)+(r.abs||0),0));
+  let ex=0,ab=0;
+  if(C()>E+0.5)ex=quitar(r2(C()-E),false);
+  const P=rs.filter(r=>r.tipo==='parcial').reduce((a,r)=>a+(r.monto||0),0),yaAbs=cm.reduce((a,r)=>a+(r.abs||0),0),meta=Math.min(P,C());
+  if(meta-yaAbs>0.5)ab=quitar(r2(meta-yaAbs),true);
+  return {ex,ab,antes,despues:suma()};
+}
 function montoCaso(c){return Math.max(0,pendientes(c).reduce((a,p)=>a+p.total,0)-parcialQ(c,'monto'))}
 function moCaso(c){return Math.max(0,pendientes(c).reduce((a,p)=>a+p.mo,0)-parcialQ(c,'mo'))}
 function dias(c){return daysBetween(c.fecha,TODAY)}
@@ -251,7 +266,7 @@ function planImport(rows,casos,o){
   const faltan=['ot','punto','total','estado','tipo','fecha'].filter(k=>idx[k]<0);
   if(faltan.length)return {error:faltan};
   const g=(r,k)=>idx[k]>=0?r[idx[k]]:'';
-  let filas=0,partidasN=0,recup=0,recupQ=0,avisos=0,seq=0,corr=0,corrQ=0;const mov={};
+  let filas=0,partidasN=0,recup=0,recupQ=0,avisos=0,seq=0,corr=0,corrQ=0,ajN=0,ajP=0,ajA=0;const mov={},ajD=[];
   const W={},cotiz={};
   const log=(w,canal,resultado,nota)=>{const e={fecha:HOY,canal,resultado,nota:nota||'',usuario,ts:ahora+(seq++)};w.c.bitacora.push(e);w.logs.push(e)};
   for(const r of rows.slice(1)){
@@ -275,9 +290,9 @@ function planImport(rows,casos,o){
     if(f>c.fecha)c.fecha=f;
     const prev=c.partidas[key];let rec=prev?.recuperada||false;
     if(prev&&prev.estadoCM!=='Aprobado'&&estCM==='Aprobado'&&!prev.recuperada&&!w.nuevo){
-      rec=true;recup++;recupQ+=prev.total;
-      const rc={fecha:ap||HOY,monto:prev.total,mo:prev.mo,tipo:'clear-mechanic',usuario};c.recuperos.push(rc);w.recs.push(rc);
-      log(w,'Clear Mechanic','Aprobado detectado en importación',punto+' · '+Q(prev.total));}
+      rec=true;recup++;recupQ+=total;
+      const rc={fecha:ap||HOY,monto:total,mo:mo,tipo:'clear-mechanic',usuario};c.recuperos.push(rc);w.recs.push(rc);
+      log(w,'Clear Mechanic','Aprobado detectado en importación',punto+' · '+Q(total)+(Math.abs(total-prev.total)>0.004?' (cotizado antes en '+Q(prev.total)+')':''));}
     c.partidas[key]={punto,total,mo,estadoCM:estCM,fechaCM:f,recuperada:rec};w.tocadas.add(key);
   }
   for(const k in cotiz)if(cotiz[k].sin&&cotiz[k].estCM!=='Pendiente')avisos++;
@@ -301,12 +316,16 @@ function planImport(rows,casos,o){
           if(i<0)continue;usados.add(i);const x=c.recuperos[i];
           if(x.fecha>w.apr[k]){const m0=x.fecha.slice(0,7),m1=w.apr[k].slice(0,7);mov[m0]=(mov[m0]||0)-x.monto;mov[m1]=(mov[m1]||0)+x.monto;corrQ+=x.monto;x.fecha=w.apr[k];fx++}}
         if(fx){corr+=fx;log(w,'Sistema','Fecha de recuperación corregida',pl(fx,'recupero tomó','recuperos tomaron')+' la fecha de aprobación de Clear Mechanic');patch.recuperosAll=c.recuperos}}
+      {const nr=normRecuperos(c);
+        if(nr.ex>0.004||nr.ab>0.004){ajN++;ajP+=nr.ex;ajA+=nr.ab;ajD.push({ot,ex:r2(nr.ex),ab:r2(nr.ab),antes:nr.antes,despues:nr.despues});
+          log(w,'Sistema','Recuperación ajustada a Clear Mechanic',[nr.ex>0.004?'Precio aprobado menor al cotizado: −'+q2(nr.ex):'',nr.ab>0.004?'Ya contado en una autorización parcial: −'+q2(nr.ab):'',' Antes '+q2(nr.antes)+', ahora '+q2(nr.despues)].filter(Boolean).join(' · '));
+          patch.recuperosAll=c.recuperos}}
       if(w.recs.length)patch.recuperos=w.recs;
       if(w.logs.length)patch.bitacora=w.logs;
       if(Object.keys(patch).length)cambios.push({ot,patch});
     }
   }
-  return {stats:{filas,ordenes:Object.keys(W).length,partidas:partidasN,nuevos:nNuevos,actualizados:nAct,recuperados:recup,montoRecuperado:recupQ,avisos,corregidos:corr,montoCorregido:r2(corrQ),movido:Object.fromEntries(Object.entries(mov).map(([k,v])=>[k,r2(v)]))},nuevos,cambios};
+  return {stats:{filas,ordenes:Object.keys(W).length,partidas:partidasN,nuevos:nNuevos,actualizados:nAct,recuperados:recup,montoRecuperado:recupQ,avisos,corregidos:corr,montoCorregido:r2(corrQ),movido:Object.fromEntries(Object.entries(mov).map(([k,v])=>[k,r2(v)])),ajustados:{n:ajN,precio:r2(ajP),parcial:r2(ajA),casos:ajD}},nuevos,cambios};
 }
 
 /* ---- Respaldo en Excel: filas por hoja (incluye casos cerrados) ---- */
@@ -352,7 +371,7 @@ function incentivoCalc(base,cfg){const t1=Math.min(base,cfg.meta)*cfg.pct1/100,t
 function calcMes(casos,cfg,mes){
   let recuperado=0,recuperadoMO=0,autorizados=0,contactos=0,carteraAbierta=0;
   for(const c of Object.values(casos)){
-    for(const r of (c.recuperos||[]))if(String(r.fecha).startsWith(mes)){recuperado+=r.monto||0;recuperadoMO+=r.mo||0;autorizados++}
+    for(const r of (c.recuperos||[]))if(String(r.fecha).startsWith(mes)){recuperado+=r.monto||0;recuperadoMO+=r.mo||0;if((r.monto||0)>0)autorizados++}
     for(const b of (c.bitacora||[]))if(String(b.fecha).startsWith(mes)&&b.canal!=='Clear Mechanic'&&b.canal!=='Sistema')contactos++;
     if(abierto(c))carteraAbierta+=montoCaso(c);
   }
@@ -391,13 +410,14 @@ function recuperadoDetalle(casos,desde,hasta){
     let ni=0;const items=[];let mc=0;
     recs.forEach((r,i)=>{
       const manual=r.tipo!=='clear-mechanic',nota=manual?(notas[ni++]||''):'';
-      if(r.fecha<desde||r.fecha>hasta)return;
+      if(r.fecha<desde||r.fecha>hasta||!(r.monto>0))return;
       let puntos=asig.get(i)||[];
       if(manual&&r.tipo==='total'){puntos=pool.splice(0)}
       items.push({fecha:r.fecha,tipo:r.tipo,monto:r.monto||0,mo:r.mo||0,usuario:r.usuario||'',nota,puntos:puntos.map(p=>({punto:p.punto,total:p.total}))});
       mc+=r.monto||0;autor++;
     });
     monto+=mc;
+    if(!items.length)continue;
     out.push({c,monto:mc,items,ult:items.reduce((a,x)=>x.fecha>a?x.fecha:a,'')});
   }
   out.sort((a,b)=>b.ult.localeCompare(a.ult)||b.monto-a.monto);
@@ -827,6 +847,7 @@ async function importarCotizaciones(rows,archivo,box){
    <div class="step"><span class="num">${s.recuperados}</span><b>recuperados detectados</b><span class="sm">${Q(s.montoRecuperado)} que pasaron a “Aprobado”</span></div>
    <div class="step"><span class="num">${s.avisos}</span><b>avisos de calidad</b><span class="sm">Partidas aprobadas o rechazadas sin precio</span></div></div>
    ${s.corregidos?`<div class="msg"><b>Fechas de recuperación corregidas:</b> ${pl(s.corregidos,'recupero tomó','recuperos tomaron')} la fecha en que Clear Mechanic registró la aprobación (${Q(s.montoCorregido)}). Movimiento por mes: ${Object.entries(s.movido).filter(([,v])=>v).sort().map(([m,v])=>esc(mesTxt(m))+' '+(v>0?'+':'−')+Q(Math.abs(v))).join(' · ')}. Revisa Semana → Cierre mensual y reemplaza los cierres que cambiaron.</div>`:''}
+   ${s.ajustados&&s.ajustados.n?`<div class="msg"><b>Recuperaciones ajustadas a lo que dice Clear Mechanic (${pl(s.ajustados.n,'caso','casos')}):</b> ${s.ajustados.precio?'−'+Q(s.ajustados.precio)+' por precio aprobado menor al cotizado. ':''}${s.ajustados.parcial?'−'+Q(s.ajustados.parcial)+' que ya estaba contado en una autorización parcial. ':''}<br>${s.ajustados.casos.map(x=>'OT '+esc(x.ot)+': '+Q(x.antes)+' → '+Q(x.despues)).join(' · ')}. Cada ajuste queda en la bitácora del caso. Revisa Semana → Cierre mensual y reemplaza los cierres que cambiaron.</div>`:''}
    <div class="panel" id="impCart"></div>`;
   toast('Cotizaciones importadas');
   rehacerAgendaTrasImport();
@@ -1008,7 +1029,7 @@ function weekStart(d){const [y,m,dd]=d.split('-').map(Number);const dt=new Date(
 function semanaStats(){
   const ws=weekStart(TODAY);let monto=0,mo=0,autor=0;const porDia={};
   for(let i=0;i<6;i++){const d=addDays(ws,i);porDia[d]={asig:(S.agenda[d]||[]).length,cont:0,aut:0,monto:0}}
-  for(const c of Object.values(S.casos)){(c.bitacora||[]).forEach(b=>{if(porDia[b.fecha]&&b.canal!=='Clear Mechanic'&&b.canal!=='Sistema')porDia[b.fecha].cont++});(c.recuperos||[]).forEach(r=>{if(porDia[r.fecha]){porDia[r.fecha].aut++;porDia[r.fecha].monto+=r.monto;monto+=r.monto;mo+=r.mo;autor++}})}
+  for(const c of Object.values(S.casos)){(c.bitacora||[]).forEach(b=>{if(porDia[b.fecha]&&b.canal!=='Clear Mechanic'&&b.canal!=='Sistema')porDia[b.fecha].cont++});(c.recuperos||[]).forEach(r=>{if(porDia[r.fecha]&&r.monto>0){porDia[r.fecha].aut++;porDia[r.fecha].monto+=r.monto;monto+=r.monto;mo+=r.mo;autor++}})}
   return {ws,porDia,monto,mo,autor};
 }
 function mesStats(){const r=calcMes(S.casos,S.cfg,TODAY.slice(0,7));return {monto:r.recuperado,mo:r.recuperadoMO}}
@@ -1270,6 +1291,7 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manu
    Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
    (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
 const NOVEDADES=[
+ {id:'2026-11-05a',fecha:'2026-11-05',titulo:'Recuperado: se cuenta lo aprobado en Clear Mechanic, sin duplicar parciales',texto:'Cuando un punto pasa a Aprobado en Clear Mechanic, ahora se cuenta el monto aprobado de hoy (no el cotizado antes), y lo que ya estaba contado en una autorización parcial no se suma otra vez. Al volver a subir el reporte, los casos ya guardados se ajustan y el aviso te lista cuánto cambió; cada ajuste queda en la bitácora.',sec:'m-carga'},
  {id:'2026-11-04e',fecha:'2026-11-04',titulo:'Jefe de taller: cambiar la fecha de una recuperación',texto:'Si Clear Mechanic no trae la fecha de aprobación de un punto y la recuperación cayó en el mes equivocado, el jefe puede corregirla: en cualquier “Ver detalle por orden”, toca “Cambiar fecha” junto al caso, elige la fecha y escribe el motivo. Los montos no cambian y queda en la bitácora.',sec:'m-jefe'},
  {id:'2026-11-04d',fecha:'2026-11-04',titulo:'Recuperados con la fecha real de aprobación',texto:'Al importar, cada recuperación toma la fecha en que Clear Mechanic registró la aprobación (si el reporte la trae), no la del día que se sube el archivo. Así una carga atrasada ya no pasa lo recuperado de un mes al siguiente. Al volver a cargar el reporte, también se corrigen las fechas de las recuperaciones ya guardadas.',sec:'m-carga'},
  {id:'2026-11-04c',fecha:'2026-11-04',titulo:'Embudo: detalle de perdidos, descuentos y en taller',texto:'En Semana, el Embudo de la cartera ahora separa lo que ya se perdió, lo que salió por En taller / ya autorizado y los descuentos, para que se entienda de dónde sale “Sigue dormido”. Toca cada renglón para ver los casos y sus montos.',sec:'m-semana'},
@@ -1306,7 +1328,7 @@ const MAN=[
  {id:'m-autoriza',r:1,t:'Cuando el cliente autoriza',h:`<ul><li>Toca <b>Autorizó</b>. El monto viene con lo pendiente: <b>cámbialo por lo que realmente autorizó el cliente</b> (y la mano de obra de esa parte).</li><li>Si autorizó <b>todo</b> lo pendiente queda como <b>Total</b> y el caso se cierra como Recuperado.</li><li>Si autorizó <b>solo una parte</b>, el sistema lo registra como <b>Parcial</b> al bajar el monto: descuenta lo autorizado y <b>el resto sigue en la cartera</b> para seguir insistiendo. La <b>mano de obra</b> se propone en proporción al monto; si conoces el valor exacto de la mano de obra autorizada, escríbelo.</li><li>Si el carro ya entró al taller, abre el caso y toca <b>Marcar en taller</b> para no volver a contactar al cliente.</li></ul>`},
  {id:'m-cartera',r:0,t:'Cartera y Caso',h:`<ul><li><b>Cartera:</b> todos los casos, con lo <b>pendiente</b> y lo <b>recuperado</b> de cada uno. Filtra por estado o busca por OT, cliente o placa; el filtro <b>Con recuperado</b> muestra todos los casos con algo autorizado (también los parciales, que siguen abiertos). La casilla <b>Recuperado total</b> es el acumulado desde que empezó el CRM (no se reinicia) y debajo muestra lo recuperado <b>este mes</b>, que empieza de cero cada día 1. Tócala para ver, orden por orden, cuánto se recuperó y con qué puntos. Toca una fila para abrir el caso.</li><li><b>Caso:</b> partidas pendientes, bitácora de contactos (quién, cuándo, qué pasó), el botón <b>Ver reporte con fotos y videos</b> y el enlace a Clear Mechanic.</li><li>Si un caso no tiene enlace de inspección, se avisa: falta cargar el reporte “Formas de Inspección”.</li></ul>`},
  {id:'m-semana',r:0,t:'Semana y respaldo',h:`<ul><li><b>Semana:</b> el reporte del sábado: casos asignados, contactos, autorizados, lo recuperado y el incentivo del mes. Se llena solo con lo que se registra en “Hoy”. Junto a lo recuperado se ve cuánto de eso es <b>mano de obra</b> (M.O.), también en el panel del incentivo. <b>ver detalle</b> (semana) y <b>Ver detalle por orden</b> (mes) listan cada orden con lo que se recuperó. En el <b>Embudo de la cartera</b>, toca <b>Descuentos</b>, <b>Perdido</b> o <b>En taller / ya autorizado</b> para ver qué casos se restaron de “Sigue dormido”. En la tabla por día, toca el monto de un día para ver las órdenes recuperadas ese día. En <b>Cierre mensual</b>, el botón <b>Ver detalle por orden</b> (junto al selector) y <b>Ver detalle</b> en cada mes cerrado abren el detalle de ese mes, también de meses anteriores.</li><li><b>Cierre mensual:</b> abajo del incentivo se ve el historial de meses cerrados (meta, porcentajes, recuperado, incentivo). El jefe de taller guarda el cierre de cada mes al terminar (idealmente con la meta y los porcentajes ya definidos para ese mes).</li><li><b>Respaldo</b> (asesor y jefe): en Semana → Respaldo, “Descargar respaldo (Excel)”. Hazlo cada sábado y guárdalo solo en tu computadora; trae datos de clientes y no debe enviarse por WhatsApp ni subirse a internet.</li></ul>`},
- {id:'m-carga',r:1,t:'Cada lunes: carga de Clear Mechanic',h:`<p>La carga normalmente la hace el <b>jefe de taller</b>, pero el asesor también puede. Son <b>dos reportes</b> de Clear Mechanic, de los <b>últimos 30 días</b>:</p><ol><li>“Reporte de Actividad – <b>Cotizaciones</b>”</li><li>“Reporte de Actividad – <b>Formas de Inspección</b>” (trae el enlace de fotos y videos de cada orden)</li></ol><p>Cada recuperación toma la <b>fecha en que Clear Mechanic registró la aprobación</b>, no la del día en que subes el archivo. Si dejas pasar días sin cargar, lo recuperado igual cae en su mes. Si un punto viene sin fecha de aprobación en el reporte, se usa la fecha de la carga. Al volver a subir el reporte se corrigen también las fechas ya guardadas.</p><ul><li>En <b>Importar Clear Mechanic</b> arrastra los dos archivos juntos (o uno por uno, en cualquier orden): el sistema reconoce cuál es cuál.</li><li>Crea los casos nuevos, detecta a los clientes que ya aprobaron y asigna a cada caso su enlace. No duplica nada ni borra lo que ya se registró.</li><li>Si en “Hoy” aparece “Última carga de Clear Mechanic hace X días”, hay que cargar los reportes.</li><li><b>Lo registrado en la herramienta manda sobre el Excel:</b> si un caso está Recuperado, En taller, En negociación o Perdido, la carga no le cambia el estado ni lo recuperado aunque en Clear Mechanic siga como pendiente. Cuando se recupera un caso y Clear Mechanic abre una orden nueva, esa orden es otra OT y no se cuenta dos veces.</li></ul>`},
+ {id:'m-carga',r:1,t:'Cada lunes: carga de Clear Mechanic',h:`<p>La carga normalmente la hace el <b>jefe de taller</b>, pero el asesor también puede. Son <b>dos reportes</b> de Clear Mechanic, de los <b>últimos 30 días</b>:</p><ol><li>“Reporte de Actividad – <b>Cotizaciones</b>”</li><li>“Reporte de Actividad – <b>Formas de Inspección</b>” (trae el enlace de fotos y videos de cada orden)</li></ol><p>Cada recuperación toma la <b>fecha en que Clear Mechanic registró la aprobación</b>, no la del día en que subes el archivo. Si dejas pasar días sin cargar, lo recuperado igual cae en su mes. Si un punto viene sin fecha de aprobación en el reporte, se usa la fecha de la carga. Al volver a subir el reporte se corrigen también las fechas ya guardadas.</p><p>Lo recuperado de un punto aprobado en Clear Mechanic es el <b>monto aprobado hoy</b>, aunque el precio haya bajado respecto a lo cotizado. Si antes registraste una <b>autorización parcial</b> de esos mismos puntos, esa parte no se suma dos veces. Cada ajuste queda en la bitácora del caso.</p><ul><li>En <b>Importar Clear Mechanic</b> arrastra los dos archivos juntos (o uno por uno, en cualquier orden): el sistema reconoce cuál es cuál.</li><li>Crea los casos nuevos, detecta a los clientes que ya aprobaron y asigna a cada caso su enlace. No duplica nada ni borra lo que ya se registró.</li><li>Si en “Hoy” aparece “Última carga de Clear Mechanic hace X días”, hay que cargar los reportes.</li><li><b>Lo registrado en la herramienta manda sobre el Excel:</b> si un caso está Recuperado, En taller, En negociación o Perdido, la carga no le cambia el estado ni lo recuperado aunque en Clear Mechanic siga como pendiente. Cuando se recupera un caso y Clear Mechanic abre una orden nueva, esa orden es otra OT y no se cuenta dos veces.</li></ul>`},
  {id:'m-pros',r:0,t:'Prospección de servicios de mantenimiento',h:`<p>Esta pestaña arma, con el historial de servicios <b>aprobados</b> en Clear Mechanic (menor, intermedio, mayor, mayor completo y caja automática), la lista de clientes a quienes conviene contactar para su próximo mantenimiento.</p><ul><li><b>Vencidos:</b> su último servicio fue hace entre 12 y 24 meses. Los de más de 24 meses se dejan fuera porque probablemente ya no tienen el vehículo.</li><li><b>Próximos a servicio:</b> ya pasó el 85% del tiempo que normalmente tardan entre un servicio y el siguiente.</li><li><b>Ya en contacto:</b> alguien los contactó hace poco o quedó una cita; no se vuelven a llamar todavía.</li><li>Toca un cliente: verás cada servicio con su fecha, kilometraje y monto, los trabajos preventivos sugeridos y el mensaje de WhatsApp listo. Registra el resultado: <b>Mensaje enviado, Sin respuesta, Agendó cita, Más adelante, Ya vino</b> (servicio que no quedó cotizado en Clear Mechanic) o <b>No tiene el vehículo</b>.</li><li>Si el cliente ya tiene un caso abierto de cotización, aparece marcado para no llamarlo dos veces por temas distintos.</li><li><b>Cargar historial:</b> sube el reporte de Cotizaciones con el rango largo (desde el 1 de enero de 2025). No crea casos ni toca la cartera. La carga semanal de Importar también lo va actualizando.</li><li>El jefe de taller edita aquí qué cuenta como servicio, los trabajos sugeridos por kilometraje y los modelos diésel.</li></ul>`},
  {id:'m-historial',r:0,t:'Historial de vehículos',h:`<p>Busca por <b>nombre, placa, vehículo, VIN, teléfono o número de OT</b> y verás todas las órdenes de ese vehículo: fecha, kilometraje y cada punto con su estado (aprobado, rechazado o pendiente) y su monto. Así no hace falta entrar a Clear Mechanic para revisar qué se le ha hecho o cotizado.</p><ul><li>Escribe varias palabras para acotar (por ejemplo, <i>Hilux Mendez</i>).</li><li>Si la orden tiene un caso de cotización, aparece el enlace <b>Ver caso</b>.</li><li>Desde Prospección, el detalle de cada cliente tiene el botón <b>Ver historial completo</b>.</li><li>Solo incluye lo que viene en los reportes de Cotizaciones cargados en <b>Prospección → Cargar historial</b> y en la carga semanal.</li></ul>`},
  {id:'m-jefe',r:2,t:'Solo jefe de taller: ajustes y usuarios',h:`<ul><li><b>Cambiar la fecha de una recuperación:</b> en cualquier <b>Ver detalle por orden</b> (semana, mes, cierre o Cartera), toca <b>Cambiar fecha</b> junto al caso. Sirve cuando Clear Mechanic no trajo la fecha de aprobación y lo recuperado cayó en el mes equivocado. Los montos no cambian; después reemplaza el cierre del mes afectado.</li><li><b>Semana → Ajustes:</b> casos por día, meta mensual y porcentajes del incentivo. Después de cambiar los casos por día usa “Rehacer agenda” en Hoy para aplicarlo.</li><li><b>Caso cerrado como En taller o Perdido que en realidad fue recuperado:</b> si el caso <b>ya tiene monto autorizado registrado</b>, ábrelo y toca <b>Marcar como Recuperado</b> (solo cambia el estado). Si <b>no</b> tiene monto, toca <b>Registrar recuperación</b>. Ahí escribes lo que el cliente autorizó (total o parcial) y una nota; queda como recuperado (semana, mes e incentivo) y la bitácora anota que fue corrección del jefe.</li><li><b>Caso que ya estaba autorizado antes:</b> si la carga de Clear Mechanic contó como “recuperado” un caso que el cliente ya había autorizado antes (Clear Mechanic no lo tenía marcado), abre el caso y toca <b>Quitar de lo recuperado (ya estaba autorizado)</b>. Se retiran esos montos de lo recuperado, del incentivo y de la semana, y la bitácora conserva el historial con tu nota. Si ya habías guardado el cierre de ese mes, vuelve a guardarlo para que se actualice.</li><li><b>Recuperación con descuento:</b> si el cliente autorizó todo pero se facturó con descuento y el caso sigue mostrando una diferencia pendiente, abre el caso y toca <b>Ajustar a recuperación total (descuento)</b>. El monto recuperado no cambia; la diferencia queda registrada como descuento (con tu nota en la bitácora) y el caso pasa a 100% recuperado. La ventana sugiere la diferencia exacta, con centavos. Si el caso ya tiene descuento, el botón pasa a <b>Editar descuento</b> para corregir el monto total. Para evitarlo en adelante, el asesor debe registrar en “Autorizó” el monto cotizado y dejar el descuento para el jefe.</li><li><b>Cierre mensual:</b> en Semana → Cierre mensual elige el mes y toca “Guardar cierre”. Se guardan la meta y los porcentajes <b>actuales</b>, lo recuperado, las autorizaciones y el incentivo que salió, para que no se pierdan si después cambias los ajustes. Si vuelves a cerrar el mismo mes, se reemplaza (pide confirmación). Primero ajusta la meta y los % del mes, luego cierra.</li><li><b>Usuarios y accesos</b> (Semana → Ajustes): agregar usuarios con su rol (consulta, asesor o jefe), restablecer el PIN de alguien y desactivar un acceso. Los usuarios no se borran, solo se desactivan.</li><li>Si pasan más de 7 días sin respaldo, en “Hoy” te sale un aviso.</li></ul>`},
