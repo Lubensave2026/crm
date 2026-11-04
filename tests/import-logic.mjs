@@ -195,6 +195,44 @@ ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
   const antes=caso([{fecha:'2026-10-20',monto:1000,mo:0,tipo:'clear-mechanic',usuario:'t'}],structuredClone(ya));
   ok('corrección: si la fecha guardada ya es anterior a la aprobación no se mueve',L.planImport([cab,...R('1','A',1000,'Aprobado por Cliente','2026-10-26T15:14:00')],{1:antes},{hoy:H2,usuario:'t'}).stats.corregidos,0);
 }
+// ---- Recuperado = lo aprobado hoy en Clear Mechanic, sin duplicar las autorizaciones parciales ----
+{
+  const H2='2026-11-04';
+  const cab=['OR #','Fecha / Hora de apertura de Orden','Nombre','Apellido','Móvil','Marca','Modelo','Año','Kilometraje','Placas','Tipo','Punto de Inspección','Cotización - Total','Cotización - M.O.','¿Aprobado o Rechazado?'];
+  const R=(pt,tot,est)=>[['9','2026-10-05','A','B','5555','K','M',2020,1000,'P1','Punto de Inspección',pt,'',0,est],['9','2026-10-05','A','B','5555','K','M',2020,1000,'P1','Cotización - Total',pt,tot,0,est]];
+  const aplicar=(c,pl)=>{const x=structuredClone(c);for(const {ot,patch} of pl.cambios){if(ot!=='9')continue;if(patch.partidas)Object.assign(x.partidas,patch.partidas);if(patch.estado)x.estado=patch.estado;if(patch.recuperosAll)x.recuperos=patch.recuperosAll;else if(patch.recuperos)x.recuperos.push(...patch.recuperos)}return x};
+  const tot=c=>Math.round(c.recuperos.reduce((a,r)=>a+r.monto,0)*100)/100;
+  const pend=()=>({ot:'9',cliente:'A B',vehiculo:'K M 2020',placa:'P1',movil:'5555',km:'1000',fecha:'2026-10-05',estado:'En negociación',sem:'amarillo',proximo:null,motivo:'',seg:{},bitacora:[],recuperos:[],partidas:{A:{punto:'A',total:954,mo:0,estadoCM:'Pendiente',fechaCM:'2026-10-05',recuperada:false},B:{punto:'B',total:3710,mo:0,estadoCM:'Pendiente',fechaCM:'2026-10-05',recuperada:false}}});
+  const nuevoRows=[cab,...R('A',591,'Aprobado por Cliente'),...R('B',940.8,'Aprobado por Cliente')];
+  // 1. El precio aprobado hoy manda (no el cotizado antes)
+  let c0=pend();let pl=L.planImport(nuevoRows,{9:c0},{hoy:H2,usuario:'t'});
+  ok('precio: se recupera lo aprobado hoy y no lo cotizado antes',tot(aplicar(c0,pl)),1531.8);
+  // 2. Autorización parcial previa: no se suma dos veces
+  c0=pend();c0.recuperos.push({fecha:'2026-10-30',monto:1868,mo:0,tipo:'parcial',usuario:'R'});
+  pl=L.planImport(nuevoRows,{9:c0},{hoy:H2,usuario:'t'});let x=aplicar(c0,pl);
+  ok('parcial: 1,868 de parcial + 1,531.80 aprobado = 1,868 (no 3,399.80)',tot(x),1868);
+  ok('parcial: lo absorbido queda anotado',Math.round(x.recuperos.reduce((a,r)=>a+(r.abs||0),0)*100)/100,1531.8);
+  ok('parcial: el aviso cuenta el caso y el monto absorbido',pl.stats.ajustados.n+'|'+pl.stats.ajustados.parcial,'1|1531.8');
+  ok('parcial: queda en la bitácora del caso',pl.cambios[0].patch.bitacora.some(b=>b.canal==='Sistema'&&/Recuperación ajustada/.test(b.resultado)),true);
+  ok('parcial: lo pendiente del caso no se cuenta dos veces',L.montoCaso(x),0);
+  ok('parcial: el recupero en 0 que guarda lo absorbido no cuenta como autorización',x.recuperos.filter(r=>r.monto>0).length,1);
+  // 3. Volver a cargar el mismo reporte no cambia nada
+  ok('parcial: la segunda carga no ajusta otra vez',L.planImport(nuevoRows,{9:x},{hoy:H2,usuario:'t'}).stats.ajustados.n,0);
+  // 4. Estado heredado del código viejo (monto = cotizado anterior): se repara al cargar de nuevo
+  const viejo=pend();viejo.recuperos.push({fecha:'2026-10-30',monto:1868,mo:0,tipo:'parcial',usuario:'R'},{fecha:'2026-10-31',monto:954,mo:0,tipo:'clear-mechanic',usuario:'B'},{fecha:'2026-10-31',monto:3710,mo:0,tipo:'clear-mechanic',usuario:'B'});
+  viejo.partidas.A={punto:'A',total:591,mo:0,estadoCM:'Aprobado',fechaCM:'2026-10-05',recuperada:true};viejo.partidas.B={punto:'B',total:940.8,mo:0,estadoCM:'Aprobado',fechaCM:'2026-10-05',recuperada:true};viejo.estado='Recuperado';
+  ok('heredado: antes del ajuste suma 6,532',tot(viejo),6532);
+  pl=L.planImport(nuevoRows,{9:viejo},{hoy:H2,usuario:'t'});x=aplicar(viejo,pl);
+  ok('heredado: se repara a 1,868',tot(x),1868);
+  ok('heredado: separa precio (3,132.20) y parcial (1,531.80)',pl.stats.ajustados.casos[0].ex+'|'+pl.stats.ajustados.casos[0].ab,'3132.2|1531.8');
+  ok('heredado: segunda carga sin cambios',L.planImport(nuevoRows,{9:x},{hoy:H2,usuario:'t'}).stats.ajustados.n,0);
+  // 5. Sin parcial y sin cambio de precio: no se toca nada
+  const limpio=pend();limpio.partidas.A.total=591;limpio.partidas.B.total=940.8;
+  ok('sin parcial ni cambio de precio no ajusta',L.planImport(nuevoRows,{9:limpio},{hoy:H2,usuario:'t'}).stats.ajustados.n,0);
+  // 6. Lo registrado a mano como autorización total no se toca
+  const tt=pend();tt.recuperos.push({fecha:'2026-10-30',monto:4664,mo:0,tipo:'total',usuario:'R'});
+  ok('autorización total a mano no se descuenta',tot(aplicar(tt,L.planImport(nuevoRows,{9:tt},{hoy:H2,usuario:'t'}))),4664+1531.8);
+}
 // ---- Embudo de la cartera ----
 {
   const P=(t,e)=>({punto:'p'+t,total:t,mo:0,estadoCM:e,recuperada:false});
