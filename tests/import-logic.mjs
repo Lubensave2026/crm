@@ -7,7 +7,7 @@ const dir=path.dirname(fileURLToPath(import.meta.url));
 const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
-const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores,recuperadoDetalle,planServicios,tipoServ,parseServ,parseExcl,PROS_DEF,visitasServ,analisisVeh,prospectos,sugerencias,esDiesel,kmEstimado,mensajePros,normPlaca,buscarHistorial}')(HOY);
+const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores,recuperadoDetalle,planServicios,tipoServ,parseServ,parseExcl,PROS_DEF,visitasServ,analisisVeh,prospectos,sugerencias,esDiesel,kmEstimado,mensajePros,normPlaca,buscarHistorial,embudoDetalle}')(HOY);
 const xlsx=fs.readdirSync(path.join(dir,'fixtures')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
 const wb=XLSX.read(fs.readFileSync(path.join(dir,'fixtures',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
@@ -159,6 +159,25 @@ ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
   for(const r of nueva)if(String(r[iO])==='5381'){r[iO]='9999';r[iE]='Aprobado por Miembro del Equipo'}
   const pn=L.planImport(nueva,structuredClone(base),{hoy:HOY,usuario:'t'});
   ok('orden nueva ya aprobada (otra OT): no crea caso nuevo',pn.nuevos.some(x=>x.ot==='9999'),false);
+}
+// ---- Embudo de la cartera ----
+{
+  const P=(t,e)=>({punto:'p'+t,total:t,mo:0,estadoCM:e,recuperada:false});
+  const cs={
+    1:{ot:'1',estado:'Pendiente',partidas:{a:P(1000,'Rechazado')},recuperos:[]},
+    2:{ot:'2',estado:'Perdido',motivo:'Precio',partidas:{a:P(3000,'Rechazado')},recuperos:[]},
+    3:{ot:'3',estado:'En taller',partidas:{a:P(500,'Aprobado')},recuperos:[]},
+    4:{ot:'4',estado:'Recuperado',descuento:200,partidas:{a:{...P(2000,'Aprobado'),recuperada:true}},recuperos:[{fecha:'2026-10-05',monto:1800,mo:0,tipo:'total'}]},
+    5:{ot:'5',estado:'Perdido',partidas:{a:{...P(1500,'Aprobado'),recuperada:true},b:P(700,'Rechazado')},recuperos:[{fecha:'2026-10-05',monto:1500,mo:0,tipo:'parcial'}]}};
+  const E=L.embudoDetalle(cs);
+  ok('embudo: no aprobado en CM',E.cot,1000+3000+2000+1500+700);
+  ok('embudo: recuperado',E.rec,3300);ok('embudo: descuentos',E.desc,200);
+  ok('embudo: perdido (lo que no se recuperó de los casos perdidos)',E.perdido,3000+700);
+  ok('embudo: casos perdidos ordenados por monto',E.perdidos.map(x=>x.c.ot).join(','),'2,5');
+  ok('embudo: sigue dormido',E.dorm,1000);
+  ok('embudo: la suma cuadra (sin otros ajustes)',E.cot-E.rec-E.desc-E.perdido-E.taller-E.dorm,0);
+  ok('embudo: otros ajustes = 0',E.otros,0);
+  ok('embudo: lista de descuentos',E.descuentos.map(x=>x.c.ot).join(','),'4');
 }
 // ---- Prospección de servicios de mantenimiento ----
 {
