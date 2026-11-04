@@ -90,6 +90,10 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     ok('Cartera: Recuperado total abre el detalle por orden con el total',await page.evaluate(()=>{const d=document.querySelector('#dlg').textContent;return /Recuperado total/.test(d)&&/OT 5381/.test(d)&&/Q22,699/.test(d)}));
     await page.keyboard.press('Escape');
     await page.click('nav button[data-t="semana"]');await page.waitForTimeout(200);
+    {const t=(await page.textContent('#semana')).replace(/\s+/g,' ');
+     ok('Incentivo (asesor): ve el monto sugerido con la observación de gerencia',/Incentivo sugerido/.test(t)&&/Pendiente de revisión y autorización de gerencia/.test(t));
+     ok('Incentivo (asesor): no ve la meta, los porcentajes ni la base',!/hasta la meta/.test(t)&&!/de la meta/.test(t)&&!/sobre el excedente/.test(t)&&!/Base del mes/.test(t)&&!/Q60,000/.test(t));
+     ok('Cierre (asesor): sin meta, porcentajes, base ni incentivo',!/Meta/.test(await page.textContent('#cierre'))&&!/% hasta/.test(await page.textContent('#cierre'))&&!/Incentivo/.test(await page.textContent('#cierre'))&&!(await page.$('#cierreGo')))}
     await page.click('#semana a[data-rec="sem"]');await page.waitForTimeout(200);ok('Semana: ver detalle de la semana',/OT 5381/.test(await page.textContent('#dlg')));await page.keyboard.press('Escape');
     await page.click('#semana button[data-rec="mes"]');await page.waitForTimeout(200);ok('Semana: ver detalle del mes',/OT 5381/.test(await page.textContent('#dlg'))&&/Q22,699/.test(await page.textContent('#dlg')));await page.keyboard.press('Escape');
     ok('Semana: el monto recuperado de un día abre solo las órdenes de ese día',await (async()=>{const bt=await page.$('#semana button[data-rec="dia"]');if(!bt)return false;const d=await bt.getAttribute('data-mes');await bt.click();await page.waitForTimeout(200);const t=await page.textContent('#dlg');await page.keyboard.press('Escape');return /solo ese día/.test(t)&&/Recuperado el/.test(t)&&/OT 5381/.test(t)&&/^\d{4}-\d\d-\d\d$/.test(d)})());
@@ -136,7 +140,8 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     const [dl]=await Promise.all([page.waitForEvent('download'),page.click('#bkp')]);
     const fx=path.join(out,'respaldo.xlsx');await dl.saveAs(fx);await page.waitForTimeout(300);
     const XL=(await import('xlsx')).default;const wbk=XL.read(fs.readFileSync(fx),{type:'buffer'});
-    ok('respaldo: hojas',JSON.stringify(wbk.SheetNames)===JSON.stringify(['Resumen','Cartera','Partidas','Bitácora','Recuperos','Cierres mensuales']));
+    ok('respaldo (asesor): hojas, sin la de cierres mensuales',JSON.stringify(wbk.SheetNames)===JSON.stringify(['Resumen','Cartera','Partidas','Bitácora','Recuperos']));
+    ok('respaldo (asesor): el Resumen no trae base ni incentivo',!/incentivo/i.test(JSON.stringify(XL.utils.sheet_to_json(wbk.Sheets.Resumen,{header:1}))));
     ok('respaldo: 102 casos en Cartera',XL.utils.sheet_to_json(wbk.Sheets.Cartera).length===102);
     ok('respaldo: nombre con fecha',/^CRM_LNS_Respaldo_\d{4}-\d{2}-\d{2}\.xlsx$/.test(dl.suggestedFilename()));
     ok('respaldo: se anota en crm_config',await page.evaluate(()=>__DB.crm_config.zona10.ultimoRespaldo?.por==='Ricardo'));
@@ -166,6 +171,10 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   ok('manual: consulta ve su nota y no ve la rutina de asesor',/Tu usuario es de consulta/.test(await a.page.textContent('#manual'))&&!/Tu rutina diaria/.test(await a.page.textContent('#manual')));
   ok('consulta: sin pestaña Importar',await a.page.isHidden('nav button[data-t="importar"]'));
   await a.page.click('nav button[data-t="semana"]');ok('consulta: sin Ajustes',!(await a.page.$('#cSave')));
+  await a.page.evaluate(()=>{const m=new Date(Date.now()-40*864e5).toISOString().slice(0,7);__DB.crm_cierres=__DB.crm_cierres||{};__DB.crm_cierres[m]={mes:m,meta:60000,pct1:1,pct2:2,base:'total',recuperado:12345,recuperadoMO:3000,autorizados:7,incentivo:4321,cerradoPor:'Byron',cerrado:new Date().toISOString()};__notify()});await a.page.waitForTimeout(300);
+  {const t=(await a.page.textContent('#cierre')).replace(/\s+/g,' ');
+   ok('Cierre (consulta): ve el mes cerrado con lo recuperado y las autorizaciones',/Q12,3457Ver detalle/.test(t));
+   ok('Cierre (consulta): no ve meta, porcentajes, base, incentivo ni quién cerró',!/Q60,000/.test(t)&&!/Q4,321/.test(t)&&!/% hasta/.test(t)&&!/Meta/.test(t)&&!/Cerrado por/.test(t))}
   await a.ctx.close();
   // Cambiar PIN propio (Ricardo)
   const r=await abrir({width:1280,height:900});await login(r.page,'Ricardo','222222');
