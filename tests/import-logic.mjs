@@ -7,7 +7,7 @@ const dir=path.dirname(fileURLToPath(import.meta.url));
 const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
-const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores,recuperadoDetalle,planServicios,tipoServ,parseServ,parseExcl,PROS_DEF,visitasServ,analisisVeh,prospectos,sugerencias,esDiesel,kmEstimado,mensajePros,normPlaca,buscarHistorial,embudoDetalle}')(HOY);
+const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores,recuperadoDetalle,planServicios,tipoServ,parseServ,parseExcl,PROS_DEF,visitasServ,analisisVeh,prospectos,esOtraSede,sugerencias,esDiesel,kmEstimado,mensajePros,normPlaca,buscarHistorial,embudoDetalle}')(HOY);
 const xlsx=fs.readdirSync(path.join(dir,'fixtures')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
 const wb=XLSX.read(fs.readFileSync(path.join(dir,'fixtures',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
@@ -356,6 +356,13 @@ ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
    ok('dos sedes: volver a cargar la otra sede no duplica',L.planServicios(c,structuredClone(xs),{origen:'CAES'}).escribir.length,0);
    ok('dos sedes: se busca la OT sin la marca',L.buscarHistorial(xs,'5400').length,1);
    ok('dos sedes: se busca la OT con la marca',L.buscarHistorial(xs,'CAES-5400').length,1);}
+  // Prospección usa solo los servicios de la propia sede
+  {const d=new Date(HOY+'T12:00:00');d.setDate(d.getDate()-420);const f=d.toISOString().slice(0,10);
+   const r=[cab,fila('77',f,'','P888QQQ',40000,'SERVICIO MENOR',0,'Aprobado por Cliente'),total('77',f,'','P888QQQ',40000,'SERVICIO MENOR',500,'Aprobado por Cliente')];
+   const cruz={};aplicar(cruz,L.planServicios(r,cruz,{origen:'CAES'}));const prop={};aplicar(prop,L.planServicios(r,prop,{}));
+   ok('prospección: cliente que solo vino a la otra sede no sale en las listas',L.prospectos(cruz,{},{},HOY).length,0);
+   ok('prospección: el mismo cliente en su propia sede sí sale vencido',L.prospectos(prop,{},{},HOY).length,1);
+   ok('esOtraSede distingue el prefijo',[L.esOtraSede('CAES-5400'),L.esOtraSede('5400'),L.esOtraSede('Z10-7')].join(),'true,false,true');}
   ok('mensaje: vencido incluye meses y firma',/Hace 13 meses/.test(L.mensajePros(a2,'Ricardo','Lube N Save Zona 10',[]))&&/Ricardo/.test(L.mensajePros(a2,'Ricardo','Lube N Save Zona 10',[])),true);
 }
 process.exit(fallos?1:0);
