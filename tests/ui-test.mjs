@@ -241,6 +241,10 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await b.page.setInputFiles('#fileP',xlsx);await b.page.waitForSelector('#pRes .steps',{timeout:60000});
   ok('Prospección: cargar historial no crea casos nuevos ni toca la cartera',(await b.page.evaluate(()=>Object.keys(__DB.crm_casos).length))===casosAntes);
   ok('Prospección: cargar historial guarda la última carga',await b.page.evaluate(()=>Object.values(__DB.crm_config).some(x=>x.prosUlt&&x.prosUlt.usuario==='Byron')));
+  b.page.once('dialog',d=>d.accept());
+  await b.page.selectOption('#pOrigen',{index:1});await b.page.setInputFiles('#fileP',xlsx);await b.page.waitForSelector('#pRes .steps',{timeout:60000});await b.page.waitForTimeout(300);
+  ok('Prospección: historial de la otra sede se guarda con su marca y su propia fecha de carga',await b.page.evaluate(()=>Object.values(__DB.crm_config).some(x=>x.prosUltOtra&&x.prosUltOtra.usuario==='Byron')&&Object.values(__DB.crm_vehiculos).some(v=>Object.keys(v.ord||{}).some(o=>/^[A-Z0-9]+-/.test(o)))));
+  await b.page.selectOption('#pOrigen','');
   await b.page.fill('#p_pct','90');await b.page.click('#pSave');await b.page.waitForTimeout(400);
   ok('Prospección: el jefe guarda sus ajustes',await b.page.evaluate(()=>Object.values(__DB.crm_config).some(x=>x.pros&&x.pros.pct===90&&/Servicio menor/.test(x.pros.servicios))));
   ok('Prospección: sin aviso de historial corto cuando ya cubre 12 meses',!/todavía no cubre/.test(await b.page.textContent('#prospeccion')));
