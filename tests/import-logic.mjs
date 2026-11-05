@@ -254,7 +254,7 @@ ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
 }
 // ---- Prospección de servicios de mantenimiento ----
 {
-  const aplicar=(vehs,pl)=>{for(const {key,data} of pl.escribir){const ex=vehs[key]||{};vehs[key]={...ex,...data,serv:{...(ex.serv||{}),...(data.serv||{})}}}};
+  const aplicar=(vehs,pl)=>{for(const {key,data} of pl.escribir){const ex=vehs[key]||{};vehs[key]={...ex,...data,serv:{...(ex.serv||{}),...(data.serv||{})},ord:{...(ex.ord||{}),...(data.ord||{})}}}};
   const vehs={};
   const ps=L.planServicios(rows,vehs,{});
   ok('servicios: sin error de formato',!!ps.error,false);
@@ -345,6 +345,17 @@ ok('meses: texto',L.mesTxt('2026-10'),'octubre 2026');
   ok('historial: sin coincidencia',L.buscarHistorial(vv,'zzzz').length,0);
   ok('historial: orden de Firestore con otro orden de llaves no se reescribe',L.planServicios(v1,JSON.parse(JSON.stringify(vv),(k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([x],[y])=>x<y?1:-1)):v),{}).escribir.length,0);
   ok('historial: vehículo sin servicios también queda guardado',(()=>{const r=[cab,fila('9','2026-01-10','','P555ZZZ',20000,'FRENOS DELANTEROS',0,'Aprobado por Cliente'),total('9','2026-01-10','','P555ZZZ',20000,'FRENOS DELANTEROS',800,'Aprobado por Cliente')];const x=L.planServicios(r,{},{});return x.stats.vehiculos===1&&Object.values(x.escribir[0].data.ord)[0].p[0].t===800})(),true);
+  // Dos sedes con la MISMA OT (5400) para el mismo cliente: no se pisan, se marcan con el código de la otra sede
+  {const z=[cab,fila('5400','2025-03-01','','P777XYZ',40000,'SERVICIO MENOR',0,'Aprobado por Cliente'),total('5400','2025-03-01','','P777XYZ',40000,'SERVICIO MENOR',500,'Aprobado por Cliente')];
+   const c=[cab,fila('5400','2026-01-15','','P777XYZ',48000,'SERVICIO INTERMEDIO',0,'Aprobado por Cliente'),total('5400','2026-01-15','','P777XYZ',48000,'SERVICIO INTERMEDIO',900,'Aprobado por Cliente')];
+   const xs={};aplicar(xs,L.planServicios(z,xs,{}));const p2=L.planServicios(c,xs,{origen:'caes'});aplicar(xs,p2);
+   const v=Object.values(xs)[0];
+   ok('dos sedes: un solo vehículo con la visita de cada sede',Object.keys(xs).length,1);
+   ok('dos sedes: la OT repetida no se pisa (2 órdenes)',Object.keys(v.ord).sort().join(','),'5400,CAES-5400');
+   ok('dos sedes: la otra sede cuenta como visita (última fecha)',L.visitasServ(v).join(','),'2025-03-01,2026-01-15');
+   ok('dos sedes: volver a cargar la otra sede no duplica',L.planServicios(c,structuredClone(xs),{origen:'CAES'}).escribir.length,0);
+   ok('dos sedes: se busca la OT sin la marca',L.buscarHistorial(xs,'5400').length,1);
+   ok('dos sedes: se busca la OT con la marca',L.buscarHistorial(xs,'CAES-5400').length,1);}
   ok('mensaje: vencido incluye meses y firma',/Hace 13 meses/.test(L.mensajePros(a2,'Ricardo','Lube N Save Zona 10',[]))&&/Ricardo/.test(L.mensajePros(a2,'Ricardo','Lube N Save Zona 10',[])),true);
 }
 process.exit(fallos?1:0);

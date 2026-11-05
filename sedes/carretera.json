@@ -7,6 +7,7 @@
   "shortName": "CRM CAES",
   "clearMechanic": "https://lubensave14.clearmechanic.com/dashboard/orders",
   "asesor": "Edson",
+  "codigo": "CAES",
   "repo": "lubensave2026/crm-carretera",
   "url": "https://lubensave2026.github.io/crm-carretera/",
   "firebase": {

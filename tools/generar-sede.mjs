@@ -45,6 +45,9 @@ sub("encabezado estático",'<span id="hoyFecha">Zona 10</span>','<span id="hoyFe
 sub("Clear Mechanic","https://lubensavezona10.clearmechanic.com/dashboard/orders",cfg.clearMechanic,1);
 sub("asesor por defecto","asesor:'Ricardo'","asesor:'"+cfg.asesor+"'",1);
 sub("asesor por defecto (ajustes)","||'Ricardo'","||'"+cfg.asesor+"'",1);
+// Código de sede para marcar las órdenes de la otra sede en el historial (cada sede numera distinto)
+if(!/^[A-Z0-9]{2,6}$/.test(cfg.codigo||''))fail('Falta "codigo" (2 a 6 letras mayúsculas o números) en el JSON de la sede');
+sub("códigos de sede","const SEDE_COD='Z10',OTRA_COD='CAES',OTRA_NOM='Carretera al Salvador';","const SEDE_COD='"+cfg.codigo+"',OTRA_COD='Z10',OTRA_NOM='Zona 10';",1);
 // Nombre de la aplicación
 const nombreApp=/^Lube N Save/i.test(cfg.corto)?'CRM '+cfg.corto:'CRM Lube N Save · '+cfg.corto;
 sub("título",'<title>CRM Lube N Save</title>','<title>'+esc(nombreApp)+'</title>',1);
