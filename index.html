@@ -62,6 +62,10 @@ h2{font-family:var(--display);font-size:20px;margin:0}
 table{border-collapse:collapse;width:100%;font-size:13.5px}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);padding:9px 12px;border-bottom:2px solid var(--ink);white-space:nowrap}
 td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.ords{display:flex;flex-direction:column;gap:14px;margin-top:8px;padding:12px;background:color-mix(in srgb,var(--ink) 16%,var(--bg))}
+.ord{border:2px solid var(--ink)}
+.ord thead th{font-size:15px;font-weight:700;color:var(--ink);text-transform:none;letter-spacing:0;background:var(--yellow-soft);border-bottom:1px solid var(--ink)}
+.ord thead th:last-child{font-size:12px;font-weight:600}
 td.n{font-family:var(--mono);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .tl{display:flex;flex-direction:column;gap:0}
 .tl div{display:grid;grid-template-columns:70px 90px 1fr;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px}
@@ -1241,9 +1245,9 @@ function hResultados(){
     const abre=l.length<=3;
     return `<details class="panel" ${abre?'open':''}><summary><span class="nm">${esc(v.nombre||'Sin nombre')}</span> · ${esc(v.placa||'sin placa')} · ${esc(nomVeh(v))} · <b>${ords.length?pl(ords.length,'orden','órdenes'):pl(sv.length,'servicio','servicios')}</b>${v.movil?' · '+esc(v.movil):''}</summary>
      ${v.vin?`<p class="sm">VIN ${esc(v.vin)}</p>`:''}
-     ${ords.length?ords.map(([ot,o])=>{const a=o.p.filter(p=>p.e==='A').reduce((x,p)=>x+p.t,0),r=o.p.filter(p=>p.e!=='A').reduce((x,p)=>x+p.t,0);
-       return `<div class="tw" style="margin-top:8px"><table><thead><tr><th colspan="3">${fmtDA(o.f)} · ${otTxt(ot)}${o.km?' · '+o.km.toLocaleString('es-GT')+' km':''}${S.casos[ot]?` · <a href="#" data-ver="${esc(ot)}">Ver caso</a>`:''}</th><th style="text-align:right">Aprobado ${Q(a)}${r?' · No aprobado '+Q(r):''}</th></tr></thead><tbody>
-       ${o.p.length?o.p.map(p=>`<tr><td colspan="2">${esc(p.n)}</td><td><span class="pill ${p.e==='A'?'Recuperado':''}">${EST_ORD[p.e]||p.e}</span></td><td class="n">${p.t?Q(p.t):'—'}</td></tr>`).join(''):'<tr><td colspan="4" class="sm">Sin puntos con precio en esta orden.</td></tr>'}</tbody></table></div>`}).join(''):
+     ${ords.length?'<div class="ords">'+ords.map(([ot,o])=>{const a=o.p.filter(p=>p.e==='A').reduce((x,p)=>x+p.t,0),r=o.p.filter(p=>p.e!=='A').reduce((x,p)=>x+p.t,0);
+       return `<div class="tw ord"><table><thead><tr><th colspan="3">${fmtDA(o.f)} · ${otTxt(ot)}${o.km?' · '+o.km.toLocaleString('es-GT')+' km':''}${S.casos[ot]?` · <a href="#" data-ver="${esc(ot)}">Ver caso</a>`:''}</th><th style="text-align:right">Aprobado ${Q(a)}${r?' · No aprobado '+Q(r):''}</th></tr></thead><tbody>
+       ${o.p.length?o.p.map(p=>`<tr><td colspan="2">${esc(p.n)}</td><td><span class="pill ${p.e==='A'?'Recuperado':''}">${EST_ORD[p.e]||p.e}</span></td><td class="n">${p.t?Q(p.t):'—'}</td></tr>`).join(''):'<tr><td colspan="4" class="sm">Sin puntos con precio en esta orden.</td></tr>'}</tbody></table></div>`}).join('')+'</div>':
        `<p class="msg">Este vehículo solo tiene guardados sus servicios. Vuelve a cargar el historial en Prospección para ver todas sus órdenes.</p><div class="tw"><table><thead><tr><th>Fecha</th><th>Servicio</th><th>Km</th></tr></thead><tbody>${sv.map(e=>`<tr><td>${fmtDA(e.f)}</td><td>${esc(e.t)} <span class="sm">${otTxt(e.ot)}</span></td><td>${e.km?e.km.toLocaleString('es-GT'):'—'}</td></tr>`).join('')}</tbody></table></div>`}
     </details>`}).join('')+(l.length>sh.length?`<p class="sm">Mostrando 25 de ${l.length} vehículos. Agrega más datos a la búsqueda para acotar.</p>`:'');
 }
@@ -1317,6 +1321,7 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manu
    Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
    (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
 const NOVEDADES=[
+ {id:'2026-11-06b',fecha:'2026-11-06',titulo:'Historial: órdenes más fáciles de distinguir',texto:'En Historial de vehículos cada orden es ahora una ficha con contorno completo, sobre un fondo más oscuro, y su encabezado (fecha, OT y kilometraje) está resaltado.',sec:'m-historial'},
  {id:'2026-11-06a',fecha:'2026-11-06',titulo:'Historial de las dos sedes en cada vehículo',texto:'Si un cliente visita Zona 10 y Carretera al Salvador, ahora puede verse todo su historial en cualquiera de las dos. El jefe de taller sube en Prospección → Cargar historial el reporte de la otra sede, eligiendo la sede en “Este reporte es de”. Esas órdenes se identifican con la sede (p. ej. CAES · OT 5400) porque la numeración es distinta, y un servicio hecho en la otra sede también cuenta para saber si el cliente está vencido.',sec:'m-pros'},
  {id:'2026-11-05b',fecha:'2026-11-05',titulo:'Incentivo: solo el monto sugerido',texto:'En Semana, el asesor ve únicamente el incentivo sugerido del mes con la observación “Pendiente de revisión y autorización de gerencia”. La meta, los porcentajes y el detalle de los cierres los ve solo el jefe de taller.',sec:'m-semana'},
  {id:'2026-11-05a',fecha:'2026-11-05',titulo:'Recuperado: se cuenta lo aprobado en Clear Mechanic, sin duplicar parciales',texto:'Cuando un punto pasa a Aprobado en Clear Mechanic, ahora se cuenta el monto aprobado de hoy (no el cotizado antes), y lo que ya estaba contado en una autorización parcial no se suma otra vez. Al volver a subir el reporte, los casos ya guardados se ajustan y el aviso te lista cuánto cambió; cada ajuste queda en la bitácora.',sec:'m-carga'},
