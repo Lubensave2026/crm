@@ -199,7 +199,7 @@ const FB_CFG={apiKey:"AIzaSyAf8qbial6VACkhtM6po9N97osPQ-hEnac",authDomain:"crm-l
 const app=initializeApp(FB_CFG),auth=getAuth(app),db=initializeFirestore(app,{ignoreUndefinedProperties:true});
 
 const DEF_CFG={min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'};
-let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null,cierres:[],veh:{}};
+let S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},cerr:{},enlUlt:null,cierres:[],veh:{}};
 let USER=null,US=[];const ready={casos:false,agenda:false,cfg:false,enl:false,veh:false};
 const gtToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:'America/Guatemala'});
 let TODAY=gtToday();
@@ -270,7 +270,7 @@ function planImport(rows,casos,o){
   const faltan=['ot','punto','total','estado','tipo','fecha'].filter(k=>idx[k]<0);
   if(faltan.length)return {error:faltan};
   const g=(r,k)=>idx[k]>=0?r[idx[k]]:'';
-  let filas=0,partidasN=0,recup=0,recupQ=0,avisos=0,seq=0,corr=0,corrQ=0,ajN=0,ajP=0,ajA=0;const mov={},ajD=[];
+  let filas=0,partidasN=0,recup=0,recupQ=0,avisos=0,seq=0,corr=0,corrQ=0,ajN=0,ajP=0,ajA=0;const mov={},ajD=[],omit=[],cerr=o.cerradas||null;
   const W={},cotiz={};
   const log=(w,canal,resultado,nota)=>{const e={fecha:HOY,canal,resultado,nota:nota||'',usuario,ts:ahora+(seq++)};w.c.bitacora.push(e);w.logs.push(e)};
   for(const r of rows.slice(1)){
@@ -303,7 +303,8 @@ function planImport(rows,casos,o){
   const nuevos=[],cambios=[];let nNuevos=0,nAct=0;
   for(const ot in W){const w=W[ot],c=w.c;
     if(w.nuevo){
-      if(montoCaso(c)>0){nNuevos++;
+      if(montoCaso(c)>0&&cerr&&cerr[ot]!==true)omit.push({ot,cliente:c.cliente,monto:r2(montoCaso(c)),abierta:cerr[ot]===false});
+      else if(montoCaso(c)>0){nNuevos++;
         c.sem=Object.values(c.partidas).some(p=>p.estadoCM!=='Aprobado'&&ROJO_KW.test(p.punto))?'rojo':'amarillo';
         c.estado=pendientes(c).every(p=>p.estadoCM==='Rechazado')?'Rechazado':'Pendiente';
         log(w,'Clear Mechanic','Caso creado desde importación',Q(montoCaso(c))+' pendiente');
@@ -329,7 +330,7 @@ function planImport(rows,casos,o){
       if(Object.keys(patch).length)cambios.push({ot,patch});
     }
   }
-  return {stats:{filas,ordenes:Object.keys(W).length,partidas:partidasN,nuevos:nNuevos,actualizados:nAct,recuperados:recup,montoRecuperado:recupQ,avisos,corregidos:corr,montoCorregido:r2(corrQ),movido:Object.fromEntries(Object.entries(mov).map(([k,v])=>[k,r2(v)])),ajustados:{n:ajN,precio:r2(ajP),parcial:r2(ajA),casos:ajD}},nuevos,cambios};
+  return {stats:{filas,ordenes:Object.keys(W).length,partidas:partidasN,nuevos:nNuevos,actualizados:nAct,recuperados:recup,montoRecuperado:recupQ,avisos,corregidos:corr,montoCorregido:r2(corrQ),movido:Object.fromEntries(Object.entries(mov).map(([k,v])=>[k,r2(v)])),ajustados:{n:ajN,precio:r2(ajP),parcial:r2(ajA),casos:ajD},omitidas:{n:omit.length,abiertas:omit.filter(x=>x.abierta).length,sinDato:omit.filter(x=>!x.abierta).length,monto:r2(omit.reduce((a,x)=>a+x.monto,0)),casos:omit}},nuevos,cambios};
 }
 
 /* ---- Respaldo en Excel: filas por hoja (incluye casos cerrados) ---- */
@@ -352,18 +353,20 @@ const pl=(n,u,v)=>n+' '+(n===1?u:v);
 
 /* ---- Reporte "Formas de Inspección": enlace (Orden digital) por OT ---- */
 function tipoReporte(rows){const h=(rows[0]||[]).map(norm);return h.includes('ordendigital')?'enlaces':(h.includes('puntodeinspeccion')&&h.includes('cotizaciontotal'))?'cotizaciones':null}
-function planEnlaces(rows,actuales){
-  const head=rows[0].map(norm),iOt=head.findIndex(h=>COLS.ot.includes(h)),iUrl=head.indexOf('ordendigital');
+function planEnlaces(rows,actuales,cerrActual){
+  cerrActual=cerrActual||{};
+  const head=rows[0].map(norm),iOt=head.findIndex(h=>COLS.ot.includes(h)),iUrl=head.indexOf('ordendigital'),iCom=head.indexOf('ultimacomunicacion');
   if(iOt<0||iUrl<0)return {error:[iOt<0?'OR #':null,iUrl<0?'Orden digital':null].filter(Boolean)};
-  let filas=0,invalidos=0;const cambios={};
+  let filas=0,invalidos=0,nCerr=0;const cambios={},cerrCambios={};
   for(const r of rows.slice(1)){
     if(!r||!r[iOt])continue;filas++;
     const ot=otId(r[iOt]),u=String(r[iUrl]||'').trim();
+    if(iCom>=0){const ce=/^cerrad/i.test(String(r[iCom]||'').trim());if(ce)nCerr++;if(cerrActual[ot]!==ce)cerrCambios[ot]=ce}
     if(!/^https:\/\/[^\s"'<>]+$/.test(u)){invalidos++;continue}
     if(actuales[ot]!==u)cambios[ot]=u;
   }
   const ks=Object.keys(cambios),nuevos=ks.filter(k=>!actuales[k]).length;
-  return {stats:{filas,nuevos,actualizados:ks.length-nuevos,iguales:filas-invalidos-ks.length,invalidos},cambios};
+  return {stats:{filas,nuevos,actualizados:ks.length-nuevos,iguales:filas-invalidos-ks.length,invalidos,cerradas:nCerr,conEstado:iCom>=0},cambios,cerrCambios};
 }
 
 /* ---- Cierre mensual ---- */
@@ -626,11 +629,11 @@ function startSync(){
     snap.docChanges().forEach(d=>{if(d.type==='removed')delete S.agenda[d.doc.id];else S.agenda[d.doc.id]=d.doc.data().ots||[]});
     ready.agenda=true;scheduleRender();ensureAgenda()},syncErr));
   unsubs.push(onSnapshot(query(collection(db,'crm_cierres'),orderBy('mes','desc')),snap=>{S.cierres=snap.docs.map(d=>d.data());scheduleRender()},syncErr));
-  unsubs.push(onSnapshot(doc(db,'crm_enlaces','zona10'),s=>{const d=s.exists()?s.data():{};S.enlaces=d.urls||{};S.enlUlt=d.ultima||null;ready.enl=true;scheduleRender()},syncErr));
+  unsubs.push(onSnapshot(doc(db,'crm_enlaces','zona10'),s=>{const d=s.exists()?s.data():{};S.enlaces=d.urls||{};S.cerr=d.cerr||{};S.enlUlt=d.ultima||null;ready.enl=true;scheduleRender()},syncErr));
   unsubs.push(onSnapshot(doc(db,'crm_config','zona10'),s=>{S.cfg={...DEF_CFG,...(s.exists()?s.data():{})};ready.cfg=true;scheduleRender()},syncErr));
   unsubs.push(onSnapshot(query(collection(db,'crm_importaciones'),orderBy('creada','desc'),limit(10)),snap=>{S.imports=snap.docs.map(d=>d.data());scheduleRender()},syncErr));
 }
-function stopSync(){unsubs.splice(0).forEach(u=>u());S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},enlUlt:null,cierres:[],veh:{}};ready.casos=ready.agenda=ready.cfg=ready.enl=ready.veh=false}
+function stopSync(){unsubs.splice(0).forEach(u=>u());S={casos:{},agenda:{},cfg:{...DEF_CFG},imports:[],enlaces:{},cerr:{},enlUlt:null,cierres:[],veh:{}};ready.casos=ready.agenda=ready.cfg=ready.enl=ready.veh=false}
 
 const canAct=()=>USER&&USER.rol!=='consulta';
 const isJefe=()=>USER&&USER.rol==='jefe';
@@ -841,18 +844,20 @@ async function guardarImportacion(plan,archivo,prog){
   }
 }
 const vacio=(t,m)=>`<div class="empty"><b>${t}</b>${m}</div>`;
+let cerrExtra={};
 async function importarCotizaciones(rows,archivo,box){
-  if(!ready.casos){box.innerHTML=vacio('Todavía no hay conexión con Firebase','Espera unos segundos y vuelve a intentarlo, para no pisar datos.');return}
-  const plan=planImport(rows,S.casos,{hoy:TODAY,usuario:USER.nombre});
+  if(!ready.casos||!ready.enl){box.innerHTML=vacio('Todavía no hay conexión con Firebase','Espera unos segundos y vuelve a intentarlo, para no pisar datos.');return}
+  const plan=planImport(rows,S.casos,{hoy:TODAY,usuario:USER.nombre,cerradas:{...S.cerr,...cerrExtra}});
   if(plan.error){box.innerHTML=vacio('El archivo no tiene el formato esperado','Faltan columnas: '+plan.error.join(', ')+'. Descarga el “Reporte de Actividad – Cotizaciones” de Clear Mechanic.');return}
   box.innerHTML=`<div class="panel"><b class="prog">Guardando cotizaciones en Firebase…</b></div>`;
   try{await guardarImportacion(plan,archivo,box.querySelector('.prog'))}catch(e){box.innerHTML=vacio('No se pudo guardar la importación',esc(e.code||e.message)+'. Puedes volver a subir el mismo archivo: no duplica.');return}
   const s=plan.stats;
   box.innerHTML=`<h2>Cotizaciones · ${esc(archivo)}</h2><div class="steps">
    <div class="step"><span class="num">${s.filas.toLocaleString('es-GT')}</span><b>filas leídas</b><span class="sm">${s.ordenes} órdenes · ${s.partidas} partidas con precio</span></div>
-   <div class="step"><span class="num">${s.nuevos}</span><b>casos nuevos</b><span class="sm">Órdenes con partidas rechazadas o pendientes</span></div>
+   <div class="step"><span class="num">${s.nuevos}</span><b>casos nuevos</b><span class="sm">Órdenes cerradas con partidas rechazadas o pendientes</span></div>
    <div class="step"><span class="num">${s.recuperados}</span><b>recuperados detectados</b><span class="sm">${Q(s.montoRecuperado)} que pasaron a “Aprobado”</span></div>
    <div class="step"><span class="num">${s.avisos}</span><b>avisos de calidad</b><span class="sm">Partidas aprobadas o rechazadas sin precio</span></div></div>
+   ${s.omitidas&&s.omitidas.n?`<div class="msg"><b>${pl(s.omitidas.n,'orden con pendientes no entró','órdenes con pendientes no entraron')} como caso (${Q(s.omitidas.monto)}):</b> solo se toman órdenes <b>cerradas</b>. ${s.omitidas.abiertas?pl(s.omitidas.abiertas,'está abierta (vehículo en el taller)','están abiertas (vehículos en el taller)')+'. ':''}${s.omitidas.sinDato?pl(s.omitidas.sinDato,'no aparece','no aparecen')+' en el reporte de Formas de Inspección, así que no consta que estén cerradas (si son anteriores a ese reporte, súbelo con un rango más amplio). ':''}Entrarán solas en una carga futura cuando figuren como Cerradas.<details><summary>Ver órdenes</summary>${s.omitidas.casos.map(x=>'OT '+esc(x.ot)+' · '+esc(x.cliente)+' · '+Q(x.monto)+' · '+(x.abierta?'abierta':'sin dato')).join('<br>')}</details></div>`:''}
    ${s.corregidos?`<div class="msg"><b>Fechas de recuperación corregidas:</b> ${pl(s.corregidos,'recupero tomó','recuperos tomaron')} la fecha en que Clear Mechanic registró la aprobación (${Q(s.montoCorregido)}). Movimiento por mes: ${Object.entries(s.movido).filter(([,v])=>v).sort().map(([m,v])=>esc(mesTxt(m))+' '+(v>0?'+':'−')+Q(Math.abs(v))).join(' · ')}. Revisa Semana → Cierre mensual y reemplaza los cierres que cambiaron.</div>`:''}
    ${s.ajustados&&s.ajustados.n?`<div class="msg"><b>Recuperaciones ajustadas a lo que dice Clear Mechanic (${pl(s.ajustados.n,'caso','casos')}):</b> ${s.ajustados.precio?'−'+Q(s.ajustados.precio)+' por precio aprobado menor al cotizado. ':''}${s.ajustados.parcial?'−'+Q(s.ajustados.parcial)+' que ya estaba contado en una autorización parcial. ':''}<br>${s.ajustados.casos.map(x=>'OT '+esc(x.ot)+': '+Q(x.antes)+' → '+Q(x.despues)).join(' · ')}. Cada ajuste queda en la bitácora del caso. Revisa Semana → Cierre mensual y reemplaza los cierres que cambiaron.</div>`:''}
    <div class="panel" id="impCart"></div>`;
@@ -862,15 +867,16 @@ async function importarCotizaciones(rows,archivo,box){
 }
 async function importarEnlaces(rows,archivo,box){
   if(!ready.casos||!ready.enl){box.innerHTML=vacio('Todavía no hay conexión con Firebase','Espera unos segundos y vuelve a intentarlo.');return}
-  const plan=planEnlaces(rows,S.enlaces);
+  const plan=planEnlaces(rows,S.enlaces,S.cerr);
   if(plan.error){box.innerHTML=vacio('El archivo no tiene el formato esperado','Faltan columnas: '+plan.error.join(', ')+'. Descarga el “Reporte de Actividad – Formas de Inspección” de Clear Mechanic.');return}
   const n=Object.keys(plan.cambios).length,st=plan.stats;
   box.innerHTML=`<div class="panel"><b>Guardando enlaces en Firebase…</b></div>`;
-  try{await setDoc(doc(db,'crm_enlaces','zona10'),{...(n?{urls:plan.cambios}:{}),ultima:{fecha:TODAY,creada:iso(),archivo,filas:st.filas,usuario:USER.nombre}},{merge:true})}
+  try{await setDoc(doc(db,'crm_enlaces','zona10'),{...(n?{urls:plan.cambios}:{}),...(Object.keys(plan.cerrCambios).length?{cerr:plan.cerrCambios}:{}),ultima:{fecha:TODAY,creada:iso(),archivo,filas:st.filas,usuario:USER.nombre}},{merge:true})}
   catch(e){box.innerHTML=vacio('No se pudo guardar los enlaces',esc(e.code||e.message)+'. Puedes volver a subir el mismo archivo: no duplica.');return}
+  S.cerr={...S.cerr,...plan.cerrCambios};
   const urls={...S.enlaces,...plan.cambios},ab=Object.values(S.casos).filter(abierto),con=ab.filter(c=>urls[c.ot]).length,sin=ab.length-con;
   box.innerHTML=`<h2>Enlaces de inspección · ${esc(archivo)}</h2><div class="steps" id="impEnl">
-   <div class="step"><span class="num">${st.filas.toLocaleString('es-GT')}</span><b>órdenes leídas</b><span class="sm">${st.invalidos?st.invalidos+' sin enlace válido':'todas con enlace'}</span></div>
+   <div class="step"><span class="num">${st.filas.toLocaleString('es-GT')}</span><b>órdenes leídas</b><span class="sm">${st.invalidos?st.invalidos+' sin enlace válido':'todas con enlace'} · ${st.conEstado?st.cerradas+' cerradas':'sin columna Última comunicación'}</span></div>
    <div class="step"><span class="num">${st.nuevos}</span><b>enlaces nuevos</b><span class="sm">Órdenes que antes no tenían enlace</span></div>
    <div class="step"><span class="num">${st.actualizados}</span><b>enlaces actualizados</b><span class="sm">${st.iguales} ya estaban igual</span></div>
    <div class="step"><span class="num">${sin}</span><b>casos abiertos sin enlace</b><span class="sm">${con} de ${ab.length} tienen enlace</span></div></div>
@@ -883,12 +889,14 @@ async function procesarArchivos(files){
   if(!canAct()||!files.length)return;
   if(!window.XLSX){toast('No se pudo cargar el lector de Excel');return}
   $('#impRes').innerHTML='';
-  for(const file of files){
+  /* El reporte de Formas de Inspección dice qué órdenes están cerradas: se lee antes para que las Cotizaciones de esta misma carga solo creen casos de órdenes cerradas */
+  const lista=[];
+  for(const file of files){try{const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});lista.push({file,rows,tipo:tipoReporte(rows)})}catch(err){lista.push({file,err})}}
+  cerrExtra={};for(const x of lista)if(x.tipo==='enlaces'){const p=planEnlaces(x.rows,{},{});if(!p.error)Object.assign(cerrExtra,p.cerrCambios)}
+  for(const {file,rows,tipo,err:e0} of lista){
     const box=document.createElement('div');box.className='impBlock';$('#impRes').append(box);
     try{
-      const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
-      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
-      const tipo=tipoReporte(rows);
+      if(e0)throw e0;
       if(tipo==='cotizaciones')await importarCotizaciones(rows,file.name,box);
       else if(tipo==='enlaces')await importarEnlaces(rows,file.name,box);
       else box.innerHTML=vacio('No reconozco el archivo “'+esc(file.name)+'”','Debe ser el “Reporte de Actividad – Cotizaciones” o el “Reporte de Actividad – Formas de Inspección” de Clear Mechanic.');
@@ -1324,6 +1332,7 @@ function go(t){if(t==='importar'&&!canAct())t='hoy';if(t==='manual'&&tab!=='manu
    Cada vez que se publique un cambio visible para los usuarios: agregar una entrada ARRIBA en NOVEDADES
    (id ascendente, p. ej. '2026-10-20a') y actualizar la sección del manual que corresponda. */
 const NOVEDADES=[
+ {id:'2026-11-11a',fecha:'2026-11-11',titulo:'Solo órdenes cerradas entran como casos',texto:'Al cargar los reportes de Clear Mechanic, un caso nuevo solo se crea si la orden ya está Cerrada (así lo dice el reporte de Formas de Inspección). Las órdenes abiertas, con el vehículo todavía en el taller, ya no entran a la cartera ni a lo recuperado ni al incentivo. Lo que ya estaba en la cartera no cambia. Por eso la carga semanal debe incluir siempre los dos reportes.',sec:'m-carga'},
  {id:'2026-11-06c',fecha:'2026-11-06',titulo:'Prospección: solo los clientes de cada sede',texto:'Las listas de Prospección (vencidos, próximos y ya en contacto) se arman únicamente con los servicios hechos en esta sede. El reporte de la otra sede ya no mezcla clientes aquí: solo sirve para ver el historial completo en Historial de vehículos.',sec:'m-pros'},
  {id:'2026-11-06b',fecha:'2026-11-06',titulo:'Historial: órdenes más fáciles de distinguir',texto:'En Historial de vehículos cada orden es ahora una ficha con contorno completo, sobre un fondo más oscuro, y su encabezado (fecha, OT y kilometraje) está resaltado.',sec:'m-historial'},
  {id:'2026-11-06a',fecha:'2026-11-06',titulo:'Historial de las dos sedes en cada vehículo',texto:'Si un cliente visita Zona 10 y Carretera al Salvador, ahora puede verse todo su historial en cualquiera de las dos. El jefe de taller sube en Prospección → Cargar historial el reporte de la otra sede, eligiendo la sede en “Este reporte es de”. Esas órdenes se identifican con la sede (p. ej. CAES · OT 5400) porque la numeración es distinta, y un servicio hecho en la otra sede también cuenta para saber si el cliente está vencido.',sec:'m-pros'},
@@ -1365,7 +1374,7 @@ const MAN=[
  {id:'m-autoriza',r:1,t:'Cuando el cliente autoriza',h:`<ul><li>Toca <b>Autorizó</b>. El monto viene con lo pendiente: <b>cámbialo por lo que realmente autorizó el cliente</b> (y la mano de obra de esa parte).</li><li>Si autorizó <b>todo</b> lo pendiente queda como <b>Total</b> y el caso se cierra como Recuperado.</li><li>Si autorizó <b>solo una parte</b>, el sistema lo registra como <b>Parcial</b> al bajar el monto: descuenta lo autorizado y <b>el resto sigue en la cartera</b> para seguir insistiendo. La <b>mano de obra</b> se propone en proporción al monto; si conoces el valor exacto de la mano de obra autorizada, escríbelo.</li><li>Si el carro ya entró al taller, abre el caso y toca <b>Marcar en taller</b> para no volver a contactar al cliente.</li></ul>`},
  {id:'m-cartera',r:0,t:'Cartera y Caso',h:`<ul><li><b>Cartera:</b> todos los casos, con lo <b>pendiente</b> y lo <b>recuperado</b> de cada uno. Filtra por estado o busca por OT, cliente o placa; el filtro <b>Con recuperado</b> muestra todos los casos con algo autorizado (también los parciales, que siguen abiertos). La casilla <b>Recuperado total</b> es el acumulado desde que empezó el CRM (no se reinicia) y debajo muestra lo recuperado <b>este mes</b>, que empieza de cero cada día 1. Tócala para ver, orden por orden, cuánto se recuperó y con qué puntos. Toca una fila para abrir el caso.</li><li><b>Caso:</b> partidas pendientes, bitácora de contactos (quién, cuándo, qué pasó), el botón <b>Ver reporte con fotos y videos</b> y el enlace a Clear Mechanic.</li><li>Si un caso no tiene enlace de inspección, se avisa: falta cargar el reporte “Formas de Inspección”.</li></ul>`},
  {id:'m-semana',r:0,t:'Semana y respaldo',h:`<ul><li><b>Incentivo:</b> el monto que aparece es una <b>sugerencia, pendiente de revisión y autorización de gerencia</b>. La meta y los porcentajes los maneja el jefe de taller.</li><li><b>Semana:</b> el reporte del sábado: casos asignados, contactos, autorizados, lo recuperado y el incentivo del mes. Se llena solo con lo que se registra en “Hoy”. Junto a lo recuperado se ve cuánto de eso es <b>mano de obra</b> (M.O.), también en el panel del incentivo. <b>ver detalle</b> (semana) y <b>Ver detalle por orden</b> (mes) listan cada orden con lo que se recuperó. En el <b>Embudo de la cartera</b>, toca <b>Descuentos</b>, <b>Perdido</b> o <b>En taller / ya autorizado</b> para ver qué casos se restaron de “Sigue dormido”. En la tabla por día, toca el monto de un día para ver las órdenes recuperadas ese día. En <b>Cierre mensual</b>, el botón <b>Ver detalle por orden</b> (junto al selector) y <b>Ver detalle</b> en cada mes cerrado abren el detalle de ese mes, también de meses anteriores.</li><li><b>Cierre mensual:</b> abajo del incentivo se ve el historial de meses cerrados (meta, porcentajes, recuperado, incentivo). El jefe de taller guarda el cierre de cada mes al terminar (idealmente con la meta y los porcentajes ya definidos para ese mes).</li><li><b>Respaldo</b> (asesor y jefe): en Semana → Respaldo, “Descargar respaldo (Excel)”. Hazlo cada sábado y guárdalo solo en tu computadora; trae datos de clientes y no debe enviarse por WhatsApp ni subirse a internet.</li></ul>`},
- {id:'m-carga',r:1,t:'Cada lunes: carga de Clear Mechanic',h:`<p>La carga normalmente la hace el <b>jefe de taller</b>, pero el asesor también puede. Son <b>dos reportes</b> de Clear Mechanic, de los <b>últimos 30 días</b>:</p><ol><li>“Reporte de Actividad – <b>Cotizaciones</b>”</li><li>“Reporte de Actividad – <b>Formas de Inspección</b>” (trae el enlace de fotos y videos de cada orden)</li></ol><p>Cada recuperación toma la <b>fecha en que Clear Mechanic registró la aprobación</b>, no la del día en que subes el archivo. Si dejas pasar días sin cargar, lo recuperado igual cae en su mes. Si un punto viene sin fecha de aprobación en el reporte, se usa la fecha de la carga. Al volver a subir el reporte se corrigen también las fechas ya guardadas.</p><p>Lo recuperado de un punto aprobado en Clear Mechanic es el <b>monto aprobado hoy</b>, aunque el precio haya bajado respecto a lo cotizado. Si antes registraste una <b>autorización parcial</b> de esos mismos puntos, esa parte no se suma dos veces. Cada ajuste queda en la bitácora del caso.</p><ul><li>En <b>Importar Clear Mechanic</b> arrastra los dos archivos juntos (o uno por uno, en cualquier orden): el sistema reconoce cuál es cuál.</li><li>Crea los casos nuevos, detecta a los clientes que ya aprobaron y asigna a cada caso su enlace. No duplica nada ni borra lo que ya se registró.</li><li>Si en “Hoy” aparece “Última carga de Clear Mechanic hace X días”, hay que cargar los reportes.</li><li><b>Lo registrado en la herramienta manda sobre el Excel:</b> si un caso está Recuperado, En taller, En negociación o Perdido, la carga no le cambia el estado ni lo recuperado aunque en Clear Mechanic siga como pendiente. Cuando se recupera un caso y Clear Mechanic abre una orden nueva, esa orden es otra OT y no se cuenta dos veces.</li></ul>`},
+ {id:'m-carga',r:1,t:'Cada lunes: carga de Clear Mechanic',h:`<p>La carga normalmente la hace el <b>jefe de taller</b>, pero el asesor también puede. Son <b>dos reportes</b> de Clear Mechanic, de los <b>últimos 30 días</b>:</p><ol><li>“Reporte de Actividad – <b>Cotizaciones</b>”</li><li>“Reporte de Actividad – <b>Formas de Inspección</b>” (trae el enlace de fotos y videos de cada orden y dice si la orden está <b>Cerrada</b>)</li></ol><p><b>Solo órdenes cerradas:</b> un caso nuevo se crea únicamente si la orden figura como <b>Cerrada</b> en Formas de Inspección. Si el vehículo sigue en el taller (orden abierta), no entra a la cartera, ni a lo recuperado, ni al incentivo; al terminar la carga verás el aviso con las órdenes que quedaron fuera, y entrarán solas en una carga futura cuando se cierren y sigan con pendientes. Por eso <b>siempre se suben los dos reportes</b>, con el mismo rango de fechas.</p><p>Cada recuperación toma la <b>fecha en que Clear Mechanic registró la aprobación</b>, no la del día en que subes el archivo. Si dejas pasar días sin cargar, lo recuperado igual cae en su mes. Si un punto viene sin fecha de aprobación en el reporte, se usa la fecha de la carga. Al volver a subir el reporte se corrigen también las fechas ya guardadas.</p><p>Lo recuperado de un punto aprobado en Clear Mechanic es el <b>monto aprobado hoy</b>, aunque el precio haya bajado respecto a lo cotizado. Si antes registraste una <b>autorización parcial</b> de esos mismos puntos, esa parte no se suma dos veces. Cada ajuste queda en la bitácora del caso.</p><ul><li>En <b>Importar Clear Mechanic</b> arrastra los dos archivos juntos (o uno por uno, en cualquier orden): el sistema reconoce cuál es cuál.</li><li>Crea los casos nuevos, detecta a los clientes que ya aprobaron y asigna a cada caso su enlace. No duplica nada ni borra lo que ya se registró.</li><li>Si en “Hoy” aparece “Última carga de Clear Mechanic hace X días”, hay que cargar los reportes.</li><li><b>Lo registrado en la herramienta manda sobre el Excel:</b> si un caso está Recuperado, En taller, En negociación o Perdido, la carga no le cambia el estado ni lo recuperado aunque en Clear Mechanic siga como pendiente. Cuando se recupera un caso y Clear Mechanic abre una orden nueva, esa orden es otra OT y no se cuenta dos veces.</li></ul>`},
  {id:'m-pros',r:0,t:'Prospección de servicios de mantenimiento',h:`<p>Esta pestaña arma, con el historial de servicios <b>aprobados</b> en Clear Mechanic (menor, intermedio, mayor, mayor completo y caja automática), la lista de clientes a quienes conviene contactar para su próximo mantenimiento.</p><ul><li><b>Vencidos:</b> su último servicio fue hace entre 12 y 24 meses. Los de más de 24 meses se dejan fuera porque probablemente ya no tienen el vehículo.</li><li><b>Próximos a servicio:</b> ya pasó el 85% del tiempo que normalmente tardan entre un servicio y el siguiente.</li><li><b>Ya en contacto:</b> alguien los contactó hace poco o quedó una cita; no se vuelven a llamar todavía.</li><li>Toca un cliente: verás cada servicio con su fecha, kilometraje y monto, los trabajos preventivos sugeridos y el mensaje de WhatsApp listo. Registra el resultado: <b>Mensaje enviado, Sin respuesta, Agendó cita, Más adelante, Ya vino</b> (servicio que no quedó cotizado en Clear Mechanic) o <b>No tiene el vehículo</b>.</li><li>Si el cliente ya tiene un caso abierto de cotización, aparece marcado para no llamarlo dos veces por temas distintos.</li><li><b>Cargar historial:</b> sube el reporte de Cotizaciones con el rango largo; para ver también las visitas del cliente a la otra sede, sube el reporte de esa sede escogiendo su nombre en “Este reporte es de” (sus órdenes se marcan con el código de la sede porque cada una numera distinto). Esas órdenes solo sirven para ver el historial completo: las listas de Prospección usan solo los servicios de esta sede (desde el 1 de enero de 2025). No crea casos ni toca la cartera. La carga semanal de Importar también lo va actualizando.</li><li>El jefe de taller edita aquí qué cuenta como servicio, los trabajos sugeridos por kilometraje y los modelos diésel.</li></ul>`},
  {id:'m-historial',r:0,t:'Historial de vehículos',h:`<p>Busca por <b>nombre, placa, vehículo, VIN, teléfono o número de OT</b> y verás todas las órdenes de ese vehículo: fecha, kilometraje y cada punto con su estado (aprobado, rechazado o pendiente) y su monto. Así no hace falta entrar a Clear Mechanic para revisar qué se le ha hecho o cotizado.</p><ul><li>Escribe varias palabras para acotar (por ejemplo, <i>Hilux Mendez</i>).</li><li>Si la orden tiene un caso de cotización, aparece el enlace <b>Ver caso</b>.</li><li>Desde Prospección, el detalle de cada cliente tiene el botón <b>Ver historial completo</b>.</li><li>Solo incluye lo que viene en los reportes de Cotizaciones cargados en <b>Prospección → Cargar historial</b> y en la carga semanal.</li></ul>`},
  {id:'m-jefe',r:2,t:'Solo jefe de taller: ajustes y usuarios',h:`<ul><li><b>Cambiar la fecha de una recuperación:</b> en cualquier <b>Ver detalle por orden</b> (semana, mes, cierre o Cartera), toca <b>Cambiar fecha</b> junto al caso. Sirve cuando Clear Mechanic no trajo la fecha de aprobación y lo recuperado cayó en el mes equivocado. Los montos no cambian; después reemplaza el cierre del mes afectado.</li><li><b>Semana → Ajustes:</b> casos por día, meta mensual y porcentajes del incentivo. Después de cambiar los casos por día usa “Rehacer agenda” en Hoy para aplicarlo.</li><li><b>Caso cerrado como En taller o Perdido que en realidad fue recuperado:</b> si el caso <b>ya tiene monto autorizado registrado</b>, ábrelo y toca <b>Marcar como Recuperado</b> (solo cambia el estado). Si <b>no</b> tiene monto, toca <b>Registrar recuperación</b>. Ahí escribes lo que el cliente autorizó (total o parcial) y una nota; queda como recuperado (semana, mes e incentivo) y la bitácora anota que fue corrección del jefe.</li><li><b>Caso que ya estaba autorizado antes:</b> si la carga de Clear Mechanic contó como “recuperado” un caso que el cliente ya había autorizado antes (Clear Mechanic no lo tenía marcado), abre el caso y toca <b>Quitar de lo recuperado (ya estaba autorizado)</b>. Se retiran esos montos de lo recuperado, del incentivo y de la semana, y la bitácora conserva el historial con tu nota. Si ya habías guardado el cierre de ese mes, vuelve a guardarlo para que se actualice.</li><li><b>Recuperación con descuento:</b> si el cliente autorizó todo pero se facturó con descuento y el caso sigue mostrando una diferencia pendiente, abre el caso y toca <b>Ajustar a recuperación total (descuento)</b>. El monto recuperado no cambia; la diferencia queda registrada como descuento (con tu nota en la bitácora) y el caso pasa a 100% recuperado. La ventana sugiere la diferencia exacta, con centavos. Si el caso ya tiene descuento, el botón pasa a <b>Editar descuento</b> para corregir el monto total. Para evitarlo en adelante, el asesor debe registrar en “Autorizó” el monto cotizado y dejar el descuento para el jefe.</li><li><b>Cierre mensual:</b> en Semana → Cierre mensual elige el mes y toca “Guardar cierre”. Se guardan la meta y los porcentajes <b>actuales</b>, lo recuperado, las autorizaciones y el incentivo que salió, para que no se pierdan si después cambias los ajustes. Si vuelves a cerrar el mismo mes, se reemplaza (pide confirmación). Primero ajusta la meta y los % del mes, luego cierra.</li><li><b>Usuarios y accesos</b> (Semana → Ajustes): agregar usuarios con su rol (consulta, asesor o jefe), restablecer el PIN de alguien y desactivar un acceso. Los usuarios no se borran, solo se desactivan.</li><li>Si pasan más de 7 días sin respaldo, en “Hoy” te sale un aviso.</li></ul>`},

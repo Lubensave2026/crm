@@ -36,6 +36,27 @@ const p3=L.planImport(rows3,structuredClone(casos),{hoy:HOY,usuario:'test'});
 ok('recuperado detectado',p3.stats.recuperados>=1,true);
 ok('monto recuperado detectado',Math.round(p3.stats.montoRecuperado),Math.round(c.partidas[k].total));
 
+// Solo órdenes cerradas entran como casos nuevos (cerradas = mapa OT → true/false que viene de Formas de Inspección)
+{const ots=p1.nuevos.map(x=>x.ot);
+ const pS=L.planImport(rows,{},{hoy:HOY,usuario:'test',cerradas:{}});
+ ok('cerradas: sin dato de cierre no se crea ningún caso',pS.stats.nuevos,0);
+ ok('cerradas: se reportan como omitidas (sin dato)',pS.stats.omitidas.n+'/'+pS.stats.omitidas.sinDato,ots.length+'/'+ots.length);
+ const cer={};ots.slice(0,10).forEach(o=>cer[o]=true);ots.slice(10,15).forEach(o=>cer[o]=false);
+ const pP=L.planImport(rows,{},{hoy:HOY,usuario:'test',cerradas:cer});
+ ok('cerradas: solo entran las órdenes cerradas',pP.stats.nuevos,10);
+ ok('cerradas: abiertas y sin dato se distinguen',pP.stats.omitidas.abiertas+'/'+pP.stats.omitidas.sinDato,'5/'+(ots.length-15));
+ ok('cerradas: el monto omitido suma lo pendiente',pP.stats.omitidas.monto>0,true);
+ const todas={};ots.forEach(o=>todas[o]=true);
+ ok('cerradas: con todas cerradas entra lo mismo que antes',L.planImport(rows,{},{hoy:HOY,usuario:'test',cerradas:todas}).stats.nuevos,ots.length);
+ // un caso que ya existe NO se toca por la regla: sigue detectando recuperados aunque la orden no figure como cerrada
+ ok('cerradas: casos existentes siguen detectando lo aprobado',L.planImport(rows3,structuredClone(casos),{hoy:HOY,usuario:'test',cerradas:{}}).stats.recuperados>=1,true);
+ // planEnlaces lee "Última comunicación"
+ const re=[['OR #','Orden digital','Última comunicación'],['9001','https://vehi.mobi/a','Cerrada'],['9002','https://vehi.mobi/b','WA Enviado'],['9003','https://vehi.mobi/c','Aprobado por Miembro del Equipo']];
+ const pe=L.planEnlaces(re,{},{});
+ ok('enlaces: detecta cerradas',JSON.stringify(pe.cerrCambios),JSON.stringify({'9001':true,'9002':false,'9003':false}));
+ ok('enlaces: reimport sin cambios de cierre',Object.keys(L.planEnlaces(re,pe.cambios,pe.cerrCambios).cerrCambios).length,0);
+ re[2][2]='Cerrada';
+ ok('enlaces: una orden que se cierra se actualiza',JSON.stringify(L.planEnlaces(re,pe.cambios,pe.cerrCambios).cerrCambios),JSON.stringify({'9002':true}));}
 const ag=L.computeAgenda(casos,{min:2,max:5},[]);
 ok('agenda entre 2 y 5',ag.length>=2&&ag.length<=5,true);
 

@@ -10,7 +10,14 @@ const htmlApp=fs.readFileSync(process.env.APP_HTML?path.resolve(process.env.APP_
 const PREFIJO=(htmlApp.match(/localStorage\.getItem\('([^']+)'\+k\)/)||[])[1]||'lns_crm_';
 const nov=[...htmlApp.matchAll(/\{id:'(\d{4}-\d{2}-\d{2}[a-z])',fecha:'[^']+',titulo:'([^']+)'/g)].map(m=>({id:m[1],titulo:m[2]}));
 const novMasReciente=nov[0].titulo,novTrasVista=nov.filter(n=>n.id>'2026-10-09c').length-1;
-const formas=path.join(root,'tests','fixtures',fs.readdirSync(path.join(root,'tests','fixtures')).find(f=>/Formas.*xlsx$/.test(f)&&!f.startsWith('~')));
+const formasOrig=path.join(root,'tests','fixtures',fs.readdirSync(path.join(root,'tests','fixtures')).find(f=>/Formas.*xlsx$/.test(f)&&!f.startsWith('~')));
+/* Copias de Formas de Inspección con la columna "Última comunicación" fija: todas Cerrada / ninguna cerrada (el cierre de la orden decide si entra como caso) */
+const variante=(nombre,valor)=>{const X=(await0).default;const wb=X.read(fs.readFileSync(formasOrig),{type:'buffer'}),ws=wb.Sheets[wb.SheetNames[0]],r=X.utils.sheet_to_json(ws,{header:1}),i=r[0].indexOf('Última comunicación');
+  for(const f of r.slice(1))if(f[0]!=null&&f[0]!=='')f[i]=valor;
+  {const wc=X.read(fs.readFileSync(xlsx),{type:'buffer'}),rc=X.utils.sheet_to_json(wc.Sheets[wc.SheetNames[0]],{header:1}),have=new Set(r.slice(1).map(f=>String(f[0]))),oc=rc[0].indexOf('OR #');
+   for(const o of new Set(rc.slice(1).map(f=>String(f[oc])).filter(Boolean)))if(!have.has(o)){const f=[];f[0]=o;f[i]=valor;r.push(f)}}wb.Sheets[wb.SheetNames[0]]=X.utils.aoa_to_sheet(r);const p=path.join(out,nombre);fs.writeFileSync(p,X.write(wb,{type:'buffer',bookType:'xlsx'}));return p};
+const await0=await import('xlsx');
+const formas=variante('Formas-todas-cerradas.xlsx','Cerrada'),formasAbiertas=variante('Formas-abiertas.xlsx','WA Enviado');
 const user=(id,nombre,rol,pin)=>{const sal='s'+id;return {nombre,rol,sal,pinHash:crypto.createHash('sha256').update(sal+':'+id+':'+pin).digest('hex')}};
 const seed={crm_usuarios:{byron:user('byron','Byron','jefe','111111'),ricardo:user('ricardo','Ricardo','asesor','222222'),mario:user('mario','Mario','consulta','333333')},crm_config:{zona10:{min:2,max:5,meta:60000,pct1:1,pct2:2,base:'total',asesor:'Ricardo'}}};
 let fallos=0;const ok=(n,v)=>{if(!v)fallos++;console.log((v?'OK  ':'FALLA')+' '+n)};
@@ -45,7 +52,9 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     await page.click('button[data-sec="m-carga"]');await page.waitForTimeout(500);
   }
   await page.click('nav button[data-t="importar"]');
-  await page.setInputFiles('#file',[xlsx,formas]);
+  await page.setInputFiles('#file',[xlsx,formasAbiertas]);await page.waitForSelector('#impEnl',{timeout:60000});await page.waitForTimeout(1500);
+  ok('solo cerradas: con las órdenes abiertas no se crea ningún caso',(await page.evaluate(()=>Object.keys(__DB.crm_casos).length))===0&&/no entraron como caso/.test(await page.textContent('#impRes')));
+  await page.setInputFiles('#file',[xlsx,formas]);await page.waitForFunction(()=>Object.keys(__DB.crm_casos).length>0,null,{timeout:60000});
   await page.waitForSelector('#kCart',{timeout:60000});await page.waitForSelector('#impEnl',{timeout:60000});
   await page.waitForTimeout(600);
   if(tag==='desktop'){
@@ -196,7 +205,7 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   const b=await abrir({width:1280,height:900});await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
   ok('jefe: ve Ajustes',!!(await b.page.$('#cSave')));
   await b.page.click('nav button[data-t="manual"]');await b.page.waitForTimeout(200);ok('manual: jefe ve la sección de jefe',/Solo jefe de taller/.test(await b.page.textContent('#manual')));await b.page.click('nav button[data-t="semana"]');
-  await b.page.click('nav button[data-t="importar"]');await b.page.setInputFiles('#file',xlsx);await b.page.waitForSelector('#kCart',{timeout:60000});await b.page.waitForTimeout(600);
+  await b.page.click('nav button[data-t="importar"]');await b.page.setInputFiles('#file',[xlsx,formas]);await b.page.waitForSelector('#kCart',{timeout:60000});await b.page.waitForFunction(()=>Object.keys(__DB.crm_casos).length>0,null,{timeout:60000});await b.page.waitForTimeout(1500);
   await b.page.click('nav button[data-t="hoy"]');await b.page.waitForTimeout(300);ok('jefe: aviso de respaldo en Hoy cuando no hay',/respaldo/i.test(await b.page.textContent('#hoy')));
   // ---- Prospección de servicios de mantenimiento ----
   ok('importación semanal alimenta el historial de servicios',await b.page.evaluate(()=>Object.keys(__DB.crm_vehiculos||{}).length>50));
