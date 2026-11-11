@@ -69,6 +69,18 @@ ok('monto recuperado detectado',Math.round(p3.stats.montoRecuperado),Math.round(
  ok('alerta: lista los asignados sin movimiento (el contactado no)',sm.map(x=>x.c.ot+x.dia).join(','),'C2026-10-07,D2026-10-08');
  ok('alerta: incluye los que ya están en la lista de hoy',L.pendientesAnteriores(cs,{...ag2,[HOY]:['C']},HOY,30,true).length,2);
  ok('pendientes de días anteriores: sin "todos" no repite los de hoy',L.pendientesAnteriores(cs,{...ag2,[HOY]:['C']},HOY).length,1);}
+// Casos eliminados (Descartado): no cuentan como abiertos, no detectan recuperos al importar y no ensucian el embudo
+{const ds=structuredClone(casos);const ot0=Object.keys(ds).find(o=>ds[o].estado==='Pendiente'||ds[o].estado==='Rechazado');ds[ot0].estado='Descartado';
+ ok('descartado: ya no es un caso abierto',L.abierto(ds[ot0]),false);
+ const pd=L.planImport(rows,structuredClone(ds),{hoy:HOY,usuario:'test'});
+ ok('descartado: reimportar no lo reabre ni lo toca',pd.cambios.some(x=>x.ot===ot0&&(x.patch.estado||x.patch.recuperos)),false);
+ const k0=Object.keys(ds[ot0].partidas).find(x=>ds[ot0].partidas[x].estadoCM!=='Aprobado'&&ds[ot0].partidas[x].total>0);
+ const rd=rows.map(r=>r.slice());for(const r of rd)if(String(r[iOt])===ot0&&/total/i.test(String(r[iTp]))&&String(r[iPt]).trim()===ds[ot0].partidas[k0].punto)r[iEs]='Aprobado por Miembro del Equipo';
+ const pa=L.planImport(rd,structuredClone(ds),{hoy:HOY,usuario:'test'});
+ ok('descartado: si el cliente autoriza luego, no cuenta como recuperado',(pa.cambios.find(x=>x.ot===ot0)||{patch:{}}).patch.recuperos===undefined&&pa.stats.recuperados===0,true);
+ const eA=L.embudoDetalle(casos),eD=L.embudoDetalle(ds);
+ ok('descartado: sale del embudo (cotizado y durmiendo)',eD.cot<eA.cot&&eD.dorm<eA.dorm,true);
+ ok('descartado: el embudo sigue cuadrando (otros no cambia)',Math.round(eD.otros),Math.round(eA.otros));}
 const ag=L.computeAgenda(casos,{min:2,max:5},[]);
 ok('agenda entre 2 y 5',ag.length>=2&&ag.length<=5,true);
 

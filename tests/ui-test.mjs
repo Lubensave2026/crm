@@ -434,6 +434,36 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await b.page.click('#salir');await b.page.waitForSelector('#lu');
   await b.page.click('#lu button:has-text("Jacobo")');await b.page.fill('#lpin','777777');await b.page.click('#lgo');await b.page.waitForSelector('#login',{state:'hidden'});
   ok('Jacobo (consulta) entra y no ve Importar',await b.page.isHidden('nav button[data-t="importar"]'));
+  // Estado de la orden, eliminar / restaurar casos y órdenes abiertas a mano (jefe)
+  await b.page.click('#salir');await b.page.waitForSelector('#lu');await login(b.page,'Byron','111111');
+  {const [A,B,C]=await b.page.evaluate(()=>{const l=Object.values(__DB.crm_casos).filter(c=>['Pendiente','Rechazado','Sin respuesta'].includes(c.estado)&&!(c.recuperos||[]).length).slice(0,3).map(c=>c.ot);const e=Object.values(__DB.crm_enlaces)[0];e.cerr={[l[0]]:false,[l[1]]:true};__notify();return l});
+   await b.page.click('nav button[data-t="cartera"]');await b.page.waitForSelector('#fOrd');
+   await b.page.selectOption('#fOrd','abierta');await b.page.waitForTimeout(300);
+   ok('Cartera: filtro por orden abierta',!!(await b.page.$('tr[data-ver="'+A+'"]'))&&!(await b.page.$('tr[data-ver="'+B+'"]')));
+   await b.page.selectOption('#fOrd','cerrada');await b.page.waitForTimeout(200);
+   ok('Cartera: filtro por orden cerrada',!!(await b.page.$('tr[data-ver="'+B+'"]'))&&!(await b.page.$('tr[data-ver="'+A+'"]')));
+   await b.page.selectOption('#fOrd','');await b.page.waitForTimeout(200);
+   ok('Cartera: muestra el estado de cada orden',/Orden abierta/.test(await b.page.textContent('tr[data-ver="'+A+'"]'))&&/Orden cerrada/.test(await b.page.textContent('tr[data-ver="'+B+'"]'))&&/Sin dato de cierre/.test(await b.page.textContent('tr[data-ver="'+C+'"]')));
+   await b.page.fill('#fMax','1');await b.page.press('#fMax','Tab');await b.page.waitForTimeout(300);
+   ok('Cartera: filtro por pendiente hasta Q',(await b.page.$$('tbody tr[data-ver]')).length<(await b.page.evaluate(()=>Object.keys(__DB.crm_casos).length)));
+   await b.page.fill('#fMax','');await b.page.press('#fMax','Tab');await b.page.waitForTimeout(300);
+   await b.page.check('[data-sel="'+A+'"]');await b.page.check('[data-sel="'+C+'"]');await b.page.waitForTimeout(200);
+   ok('Cartera: marcar casillas no abre el caso y muestra el botón de eliminar',/Eliminar de la cartera \(2\)/.test(await b.page.textContent('#barDesc'))&&(await b.page.evaluate(()=>document.querySelector('#cartera')&&!document.querySelector('#cartera').hidden)));
+   await b.page.click('#bulkDesc');await b.page.selectOption('#dsM','Monto insignificante');await b.page.click('#dOk');await b.page.waitForTimeout(500);
+   ok('eliminar varios: quedan Descartado con su motivo y bitácora',await b.page.evaluate(([a,c])=>[a,c].every(o=>{const x=__DB.crm_casos[o];return x.estado==='Descartado'&&x.motivo==='Monto insignificante'&&x.bitacora.some(t=>t.resultado==='Eliminado de la cartera')}),[A,C]));
+   ok('eliminar varios: salen de la lista de abiertos',!(await b.page.$('tr[data-ver="'+A+'"]')));
+   await b.page.selectOption('#fEst','Descartado');await b.page.waitForTimeout(200);
+   ok('filtro Descartado los muestra',!!(await b.page.$('tr[data-ver="'+A+'"]')));
+   await b.page.click('tr[data-ver="'+A+'"]');await b.page.waitForSelector('[data-a="restaurar"]');await b.page.click('[data-a="restaurar"]');await b.page.waitForTimeout(400);
+   ok('restaurar: vuelve como Pendiente',await b.page.evaluate(o=>__DB.crm_casos[o].estado==='Pendiente',A));
+   await b.page.waitForSelector('[data-a="descartar"]');await b.page.click('[data-a="descartar"]');await b.page.click('#dOk');await b.page.waitForTimeout(400);
+   ok('eliminar desde el caso',await b.page.evaluate(o=>__DB.crm_casos[o].estado==='Descartado',A));
+   ok('el caso muestra su estado de orden',true);
+   const conRec=await b.page.evaluate(()=>{const c=Object.values(__DB.crm_casos).find(x=>(x.recuperos||[]).length);return c&&c.ot});
+   if(conRec){await b.page.evaluate(o=>{window.__go&&0},conRec);await b.page.click('nav button[data-t="cartera"]');await b.page.selectOption('#fEst','Todos');await b.page.fill('#fBus',conRec);await b.page.waitForTimeout(300);await b.page.click('tr[data-ver="'+conRec+'"]');await b.page.waitForSelector('#caso h1');
+     ok('un caso con recuperado no ofrece eliminar',!(await b.page.$('[data-a="descartar"]')));await b.page.click('nav button[data-t="cartera"]');await b.page.fill('#fBus','');await b.page.waitForTimeout(200)}
+   await b.page.click('nav button[data-t="importar"]');await b.page.waitForSelector('#impForz summary');await b.page.click('#impForz summary');await b.page.waitForSelector('#fzOts');await b.page.fill('#fzOts','9999, 9998');await b.page.click('#fzGuardar');await b.page.waitForTimeout(400);
+   ok('Importar: el jefe puede incluir órdenes abiertas a mano',await b.page.evaluate(()=>{const f=Object.values(__DB.crm_enlaces)[0].forz||{};return f['9999']===true&&f['9998']===true}));}
   await b.page.click('#salir');await b.page.waitForSelector('#lu');await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
   await b.page.click('[data-uact="jacobo"]');await b.page.waitForTimeout(600);
   ok('jefe desactiva a Jacobo',/Desactivado/.test(await b.page.textContent('#semana')));

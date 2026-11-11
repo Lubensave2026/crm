@@ -30,7 +30,7 @@ export async function updateDoc(r,...args){const T=tbl(r.c);if(args.length===1&&
   for(let i=0;i<args.length;i+=2){const p=args[i],segs=p instanceof FieldPath?p.segs:String(p).split('.');setPath(T[r.id],segs,args[i+1])}notify()}
 export async function getDoc(r){const d=tbl(r.c)[r.id];return {exists:()=>!!d,data:()=>structuredClone(d)}}
 export async function getDocs(t){const T=tbl(t.c);if(t.c==='crm_vehiculos'){G.__reads=(G.__reads||0)+Object.keys(T).length;G.__fullReads=(G.__fullReads||0)+1}return {docs:Object.keys(T).map(i=>({id:i,data:()=>structuredClone(T[i])}))}}
-export function writeBatch(){const ops=[];return {set(r,d,o){ops.push(()=>setDoc(r,d,o));return this},async commit(){if(ops.length>500)throw new Error('batch>500');for(const f of ops)await f()}}}
+export function writeBatch(){const ops=[];return {set(r,d,o){ops.push(()=>setDoc(r,d,o));return this},update(r,d){ops.push(()=>updateDoc(r,d));return this},async commit(){if(ops.length>500)throw new Error('batch>500');for(const f of ops)await f()}}}
 export async function runTransaction(db,fn){const w=[];const tx={get:async r=>getDoc(r),set(r,d){w.push(()=>setDoc(r,d))}};const res=await fn(tx);for(const f of w)await f();return res}
 
 G.__notify=()=>notify();
