@@ -57,6 +57,18 @@ ok('monto recuperado detectado',Math.round(p3.stats.montoRecuperado),Math.round(
  ok('enlaces: reimport sin cambios de cierre',Object.keys(L.planEnlaces(re,pe.cambios,pe.cerrCambios).cerrCambios).length,0);
  re[2][2]='Cerrada';
  ok('enlaces: una orden que se cierra se actualiza',JSON.stringify(L.planEnlaces(re,pe.cambios,pe.cerrCambios).cerrCambios),JSON.stringify({'9002':true}));}
+// Agenda: más antiguo primero; lo asignado antes y sin movimiento va al frente; alerta de casos sin movimiento
+{const mk=(ot,f,monto)=>({ot,cliente:'C'+ot,fecha:f,estado:'Pendiente',sem:'amarillo',seg:{},bitacora:[],recuperos:[],proximo:null,partidas:{p:{punto:'x',total:monto,mo:0,estadoCM:'Pendiente',recuperada:false}}});
+ const cs={A:mk('A','2026-10-08',9000),B:mk('B','2026-09-20',100),C:mk('C','2026-10-05',500),D:mk('D','2026-08-01',50)};
+ ok('agenda: más antiguo primero (no por monto)',L.computeAgenda(cs,{min:2,max:5},[]).join(''),'DBC');
+ ok('agenda: lo asignado antes y sin movimiento va primero',L.computeAgenda(cs,{min:2,max:5},[],['C']).join(''),'CDB');
+ ok('agenda: el tope por día se respeta',L.computeAgenda(cs,{min:2,max:2},[],[]).join(''),'DB');
+ const ag2={'2026-10-07':['C','B'],'2026-10-08':['D']};
+ cs.B.bitacora.push({fecha:'2026-10-08',canal:'WhatsApp',resultado:'Enviado'});
+ const sm=L.pendientesAnteriores(cs,ag2,HOY,30,true);
+ ok('alerta: lista los asignados sin movimiento (el contactado no)',sm.map(x=>x.c.ot+x.dia).join(','),'C2026-10-07,D2026-10-08');
+ ok('alerta: incluye los que ya están en la lista de hoy',L.pendientesAnteriores(cs,{...ag2,[HOY]:['C']},HOY,30,true).length,2);
+ ok('pendientes de días anteriores: sin "todos" no repite los de hoy',L.pendientesAnteriores(cs,{...ag2,[HOY]:['C']},HOY).length,1);}
 const ag=L.computeAgenda(casos,{min:2,max:5},[]);
 ok('agenda entre 2 y 5',ag.length>=2&&ag.length<=5,true);
 

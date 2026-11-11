@@ -132,7 +132,8 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
     });
     await page.click('nav button[data-t="cartera"]');await page.click('nav button[data-t="hoy"]');await page.waitForTimeout(300);
     ok('Hoy: sección de pendientes de días anteriores con 2 casos',/Pendientes de días anteriores \(2\)/.test(await page.textContent('#hoy'))&&(await page.$$('#pendAnt article')).length===2);
-    ok('pendientes: indica de qué lista quedó sin registrar',/Quedó sin registrar/.test(await page.textContent('#pendAnt')));
+    ok('pendientes: indica de qué lista quedó sin registrar',/Sin movimiento desde la lista/.test(await page.textContent('#pendAnt')));
+    ok('Hoy: alerta de casos asignados sin ningún movimiento',/2 casos asignados en días anteriores siguen sin ningún movimiento/.test(await page.textContent('#alertaSinMov')));
     await page.screenshot({path:path.join(out,'10-pendientes-anteriores.png'),fullPage:true});
     const otAdd=await page.getAttribute('#pendAnt button[data-addhoy] >> nth=0','data-addhoy');
     await page.click('#pendAnt button[data-addhoy] >> nth=0');await page.waitForTimeout(400);
