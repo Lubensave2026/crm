@@ -7,7 +7,7 @@ const dir=path.dirname(fileURLToPath(import.meta.url));
 const html=fs.readFileSync(path.join(dir,'..','index.html'),'utf8');
 const bloque=html.split('/*@PURA-INICIO')[1].split('/*@PURA-FIN*/')[0].replace(/^[^\n]*\n/,'');
 const HOY='2026-10-09';
-const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores,recuperadoDetalle,planServicios,tipoServ,parseServ,parseExcl,PROS_DEF,visitasServ,analisisVeh,prospectos,esOtraSede,sugerencias,esDiesel,kmEstimado,mensajePros,normPlaca,buscarHistorial,embudoDetalle}')(HOY);
+const L=new Function('TODAY',bloque+';return {planImport,montoCaso,moCaso,abierto,computeAgenda,Q,filasRespaldo,pl,planEnlaces,tipoReporte,calcMes,incentivoCalc,listaMeses,mesTxt,pendientesAnteriores,recuperadoDetalle,planServicios,tipoServ,parseServ,parseExcl,PROS_DEF,visitasServ,analisisVeh,prospectos,esOtraSede,causaRiesgo,armarMensaje,sugerencias,esDiesel,kmEstimado,mensajePros,normPlaca,buscarHistorial,embudoDetalle}')(HOY);
 const xlsx=fs.readdirSync(path.join(dir,'fixtures')).find(f=>/Reporte de Actividad.*\.xlsx$/.test(f));
 const wb=XLSX.read(fs.readFileSync(path.join(dir,'fixtures',xlsx)),{type:'buffer',cellDates:true});
 const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true});
@@ -81,6 +81,25 @@ ok('monto recuperado detectado',Math.round(p3.stats.montoRecuperado),Math.round(
  const eA=L.embudoDetalle(casos),eD=L.embudoDetalle(ds);
  ok('descartado: sale del embudo (cotizado y durmiendo)',eD.cot<eA.cot&&eD.dorm<eA.dorm,true);
  ok('descartado: el embudo sigue cuadrando (otros no cambia)',Math.round(eD.otros),Math.round(eA.otros));}
+// Mensaje de recuperación: brecha, causa, evidencia y acción
+{const base={n:'Diego',veh:'Mazda CX-5 2022',asesor:'Ricardo',sede:'Lube N Save Zona 10',tit:'aro de llanta y cambio de llanta delantera izquierda',tot:'Q1,850',lk:'https://vehi.mobi/URs5v4'};
+ const cr=L.causaRiesgo(['Aro de llanta','Cambio de llanta delantera izquierda'],'amarillo');
+ ok('causa: llantas y aros',/agarre y estabilidad/.test(cr.c),true);
+ ok('causa: frenos',/frenado/.test(L.causaRiesgo(['Pastillas de freno traseras'],'amarillo').c),true);
+ ok('causa: embrague gana a disco',/embrague/.test(L.causaRiesgo(['Disco de embrague'],'amarillo').c),true);
+ ok('causa: batería',/arranque/.test(L.causaRiesgo(['ESTADO DE BATERIA'],'amarillo').r),true);
+ ok('causa: sin coincidencia y crítico',/prioritario/.test(L.causaRiesgo(['Algo raro'],'rojo').c),true);
+ ok('causa: sin coincidencia y preventivo',/preventivo/.test(L.causaRiesgo(['Algo raro'],'amarillo').c),true);
+ ok('causa: no confunde palabras parecidas (claro/aro)',/preventivo/.test(L.causaRiesgo(['Tapa clara'],'amarillo').c),true);
+ const m1=L.armarMensaje({...base,etapa:'',cr}),m7=L.armarMensaje({...base,etapa:'s7',cr}),m30=L.armarMensaje({...base,etapa:'s30',cr});
+ ok('mensaje 1: tiene brecha, causa, evidencia y acción',['quedó pendiente','Por qué le recomendamos','Evidencia','Lo que le proponemos'].every(x=>m1.includes(x)),true);
+ ok('mensaje 1: avisa que el monto pudo variar y lleva el precio',m1.includes('Q1,850')&&/pudo|puede haber variado/.test(m1),true);
+ ok('mensaje 1: enlace en su propia línea',m1.includes('\nhttps://vehi.mobi/URs5v4\n'),true);
+ ok('mensaje 1: firma con la frase de Lube N Save',m1.endsWith('_Save it now, get it yesterday_'),true);
+ ok('mensaje 7 días: propone lo urgente y aclara el monto',/lo más urgente \(Q1,850; el monto puede haber variado/.test(m7)&&m7.includes('Evidencia'),true);
+ ok('mensaje 30 días: recordatorio suave con car wash',/car wash/.test(m30)&&/ayuda a evitar/.test(m30),true);
+ ok('mensaje: sin enlace no deja un texto roto',!/undefined|null/.test(L.armarMensaje({...base,lk:null,etapa:'',cr})),true);
+ ok('mensaje: las tres versiones son distintas',new Set([m1,m7,m30]).size,3);}
 const ag=L.computeAgenda(casos,{min:2,max:5},[]);
 ok('agenda entre 2 y 5',ag.length>=2&&ag.length<=5,true);
 
