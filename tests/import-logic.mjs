@@ -105,7 +105,7 @@ ok('monto recuperado detectado',Math.round(p3.stats.montoRecuperado),Math.round(
  ok('mensaje: cierre con el celular antes de la firma',[m1,m7,m30].every(m=>/Por cualquier duda quedo a sus órdenes: cel\. 5413-7857\.\n\n\*LUBE N SAVE\*/.test(m)),true);
  ok('mensaje: ya no dice "Quedo a sus órdenes." suelto',[m1,m7,m30].every(m=>!/Quedo a sus órdenes/.test(m)),true);
  ok('mensaje: sin celular configurado no inventa número',/Por cualquier duda quedo a sus órdenes\.\n\n/.test(L.armarMensaje({...base,tel:'',etapa:'',cr})),true);
- ok('mensaje 7 y 30 días también saludan',[m7,m30].every(m=>/^Hola, buen día\. Estimado\(a\) Diego, /.test(m)),true);}
+ ok('mensajes de 7 y 30 días: mismo inicio que el primero',[m7,m30].every(m=>m.startsWith(m1.split('\n')[0].split('.')[0]+'. Estimado(a) Diego, le saluda Ricardo de Lube N Save Zona 10. Le escribo para comentarle que revisé su historial'))&&[m7,m30].every(m=>/quedó pendiente: aro de llanta y cambio/.test(m)),true);}
 const ag=L.computeAgenda(casos,{min:2,max:5},[]);
 ok('agenda entre 2 y 5',ag.length>=2&&ag.length<=5,true);
 

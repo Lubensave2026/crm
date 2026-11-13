@@ -620,10 +620,10 @@ function armarMensaje(o){
   const prec='(el monto puede haber variado a la fecha)';
   const d=String(o.tel||'').replace(/\D/g,''),tel=d.length===8?d.slice(0,4)+'-'+d.slice(4):d;
   const cierre='Por cualquier duda quedo a sus órdenes'+(tel?': cel. '+tel:'')+'.';
-  const sal='Hola, buen día. Estimado(a) '+o.n+', ';
-  if(o.etapa==='s7')return `${sal}retomo mi mensaje sobre su ${o.veh}; sigue pendiente: ${o.tit}.\n\n*Por qué importa:* ${o.cr.c}.\n\n${evC}\n\n✅ *Propuesta:* si le parece, hacemos primero lo más urgente (${o.tot}; el monto puede haber variado a la fecha) y dejamos el resto para su próximo servicio. ¿Qué día le queda mejor? ${cierre}\n\n${FIRMA}`;
-  if(o.etapa==='s30')return `${sal}solo para recordarle que en la última visita de su ${o.veh} quedó pendiente: ${o.tit}. Atenderlo a tiempo ayuda a evitar ${o.cr.e}.\n\n${evC}\n\n✅ Cuando guste se lo programamos y aprovechamos a realizarle un car wash de cortesía. ¿Le parece si lo agendamos? ${cierre}\n\n${FIRMA}`;
-  return `${sal}le saluda ${o.asesor} de ${o.sede}. Le escribo para comentarle que revisé su historial y que en la última visita de su ${o.veh} quedó pendiente: ${o.tit}.\n\n*Por qué le recomendamos atenderlo:* ${o.cr.c}. Si se pospone, ${o.cr.r}.\n\n${ev}\n\n✅ *Lo que le proponemos:* programarlo esta semana. El presupuesto de esos trabajos era de ${o.tot} ${prec}, con garantía del taller, y aprovechamos a realizarle un car wash de cortesía. ¿Le reservo un espacio? ${cierre}\n\n${FIRMA}`;
+  const ini=`Hola, buen día. Estimado(a) ${o.n}, le saluda ${o.asesor} de ${o.sede}. Le escribo para comentarle que revisé su historial y que en la última visita de su ${o.veh} quedó pendiente: ${o.tit}.`;
+  if(o.etapa==='s7')return `${ini}\n\n*Por qué importa:* ${o.cr.c}.\n\n${evC}\n\n✅ *Propuesta:* si le parece, hacemos primero lo más urgente (${o.tot}; el monto puede haber variado a la fecha) y dejamos el resto para su próximo servicio. ¿Qué día le queda mejor? ${cierre}\n\n${FIRMA}`;
+  if(o.etapa==='s30')return `${ini} Atenderlo a tiempo ayuda a evitar ${o.cr.e}.\n\n${evC}\n\n✅ Cuando guste se lo programamos y aprovechamos a realizarle un car wash de cortesía. ¿Le parece si lo agendamos? ${cierre}\n\n${FIRMA}`;
+  return `${ini}\n\n*Por qué le recomendamos atenderlo:* ${o.cr.c}. Si se pospone, ${o.cr.r}.\n\n${ev}\n\n✅ *Lo que le proponemos:* programarlo esta semana. El presupuesto de esos trabajos era de ${o.tot} ${prec}, con garantía del taller, y aprovechamos a realizarle un car wash de cortesía. ¿Le reservo un espacio? ${cierre}\n\n${FIRMA}`;
 }
 function mensajePros(a,asesor,sede,sug){
   const n=(a.v.nombre||'').split(' ')[0]||'[Nombre]',veh=[a.v.marca,a.v.modelo,a.v.anio].filter(Boolean).join(' ')||'vehículo',tr=sug.slice(0,2).map(s=>s.nombre.toLowerCase());
@@ -1021,7 +1021,7 @@ function cardHoy(c,dia){
    <div class="chips">${chipsCaso(c)}</div>
    ${dia?`<div class="sm"><b>Sin movimiento</b> desde la lista del ${fmtD(dia)}.</div>`:''}
    <div class="sm">${topItems(c,5).map(p=>esc(p.punto)+' '+Q(p.total)).join(' · ')}</div>
-   ${r?`<div class="msg"><b>Registrado hoy:</b> ${esc(r)}</div><div class="acts">${verRep(c)}<button class="btn" data-ver="${c.ot}">Ver caso</button></div>`:`<div class="msg">${esc(mensaje(c))}</div>
+   ${r?`<div class="msg"><b>Registrado hoy:</b> ${esc(r)}</div><div class="acts">${verRep(c)}<button class="btn" data-ver="${c.ot}">Ver caso</button></div>`:`<div class="msg" style="white-space:pre-wrap">${msgHtml(mensaje(c))}</div>
    <div class="acts">${A?`${w?`<a class="btn k1" href="${w}" target="_blank" rel="noopener" data-a="enviado" data-ot="${c.ot}">Abrir WhatsApp</a>`:''}<button class="btn" data-copy="${c.ot}">Copiar</button><button class="btn" data-a="autorizo" data-ot="${c.ot}">Autorizó</button><button class="btn" data-a="repro" data-ot="${c.ot}">Reprogramar</button><button class="btn" data-a="sinresp" data-ot="${c.ot}">Sin respuesta</button><button class="btn" data-a="perdido" data-ot="${c.ot}">Perdido</button>`:''}${dia&&A?`<button class="btn" data-addhoy="${c.ot}">Agregar a la lista de hoy</button>`:''}${verRep(c)}<button class="btn" data-ver="${c.ot}">Ver caso</button></div>`}
   </div></article>`;
 }
