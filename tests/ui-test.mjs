@@ -204,6 +204,8 @@ for(const [tag,vp] of [['desktop',{width:1280,height:900}],['movil',{width:400,h
   await r.ctx.close();
   const b=await abrir({width:1280,height:900});await login(b.page,'Byron','111111');await b.page.click('nav button[data-t="semana"]');
   ok('jefe: ve Ajustes',!!(await b.page.$('#cSave')));
+  await b.page.fill('#c_tel','5413 7857');await b.page.click('#cSave');await b.page.waitForTimeout(500);
+  ok('Ajustes: guarda el celular del asesor (solo dígitos)',await b.page.evaluate(()=>Object.values(__DB.crm_config).some(x=>x.tel==='54137857')));
   await b.page.click('nav button[data-t="manual"]');await b.page.waitForTimeout(200);ok('manual: jefe ve la sección de jefe',/Solo jefe de taller/.test(await b.page.textContent('#manual')));await b.page.click('nav button[data-t="semana"]');
   await b.page.click('nav button[data-t="importar"]');await b.page.setInputFiles('#file',[xlsx,formas]);await b.page.waitForSelector('#kCart',{timeout:60000});await b.page.waitForFunction(()=>Object.keys(__DB.crm_casos).length>0,null,{timeout:60000});await b.page.waitForTimeout(1500);
   await b.page.click('nav button[data-t="hoy"]');await b.page.waitForTimeout(300);ok('jefe: aviso de respaldo en Hoy cuando no hay',/respaldo/i.test(await b.page.textContent('#hoy')));

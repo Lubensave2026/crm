@@ -82,7 +82,7 @@ ok('monto recuperado detectado',Math.round(p3.stats.montoRecuperado),Math.round(
  ok('descartado: sale del embudo (cotizado y durmiendo)',eD.cot<eA.cot&&eD.dorm<eA.dorm,true);
  ok('descartado: el embudo sigue cuadrando (otros no cambia)',Math.round(eD.otros),Math.round(eA.otros));}
 // Mensaje de recuperación: brecha, causa, evidencia y acción
-{const base={n:'Diego',veh:'Mazda CX-5 2022',asesor:'Ricardo',sede:'Lube N Save Zona 10',tit:'aro de llanta y cambio de llanta delantera izquierda',tot:'Q1,850',lk:'https://vehi.mobi/URs5v4'};
+{const base={n:'Diego',veh:'Mazda CX-5 2022',asesor:'Ricardo',tel:'54137857',sede:'Lube N Save Zona 10',tit:'aro de llanta y cambio de llanta delantera izquierda',tot:'Q1,850',lk:'https://vehi.mobi/URs5v4'};
  const cr=L.causaRiesgo(['Aro de llanta','Cambio de llanta delantera izquierda'],'amarillo');
  ok('causa: llantas y aros',/agarre y estabilidad/.test(cr.c),true);
  ok('causa: frenos',/frenado/.test(L.causaRiesgo(['Pastillas de freno traseras'],'amarillo').c),true);
@@ -99,7 +99,13 @@ ok('monto recuperado detectado',Math.round(p3.stats.montoRecuperado),Math.round(
  ok('mensaje 7 días: propone lo urgente y aclara el monto',/lo más urgente \(Q1,850; el monto puede haber variado/.test(m7)&&m7.includes('Evidencia'),true);
  ok('mensaje 30 días: recordatorio suave con car wash',/car wash/.test(m30)&&/ayuda a evitar/.test(m30),true);
  ok('mensaje: sin enlace no deja un texto roto',!/undefined|null/.test(L.armarMensaje({...base,lk:null,etapa:'',cr})),true);
- ok('mensaje: las tres versiones son distintas',new Set([m1,m7,m30]).size,3);}
+ ok('mensaje: las tres versiones son distintas',new Set([m1,m7,m30]).size,3);
+ ok('mensaje 1: saludo cercano y le escribo para comentarle',/^Hola, buen día\. Estimado\(a\) Diego, le saluda Ricardo de Lube N Save Zona 10\. Le escribo para comentarle que revisé su historial/.test(m1),true);
+ ok('mensaje: car wash con "y aprovechamos a realizarle"',[m1,m30].every(m=>/y aprovechamos a realizarle un car wash de cortesía/.test(m)),true);
+ ok('mensaje: cierre con el celular antes de la firma',[m1,m7,m30].every(m=>/Por cualquier duda quedo a sus órdenes: cel\. 5413-7857\.\n\n\*LUBE N SAVE\*/.test(m)),true);
+ ok('mensaje: ya no dice "Quedo a sus órdenes." suelto',[m1,m7,m30].every(m=>!/Quedo a sus órdenes/.test(m)),true);
+ ok('mensaje: sin celular configurado no inventa número',/Por cualquier duda quedo a sus órdenes\.\n\n/.test(L.armarMensaje({...base,tel:'',etapa:'',cr})),true);
+ ok('mensaje 7 y 30 días también saludan',[m7,m30].every(m=>/^Hola, buen día\. Estimado\(a\) Diego, /.test(m)),true);}
 const ag=L.computeAgenda(casos,{min:2,max:5},[]);
 ok('agenda entre 2 y 5',ag.length>=2&&ag.length<=5,true);
 
